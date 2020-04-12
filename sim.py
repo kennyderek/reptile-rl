@@ -67,10 +67,10 @@ class WorldSimulator:
             s += "".join(r) + "\n"
         return s
 
-    def move(self, action):
+    def step(self, action):
         '''
         action: 'N', 'S', 'E', or 'W' to move on the map
-        return: reward (int)
+        return: next_state (vector, or None if terminal), reward (int)
         '''
         # move agent based on action
         delta = {'N': (0,-1),
@@ -88,10 +88,9 @@ class WorldSimulator:
         # calculate reward
         reward = 0
         if self.maze[self.agent_y][self.agent_x] == 'G':
-            reward = 20
+            return None, 20
         else:
-            reward = -1
-        return reward
+            return self.get_state(), -1
 
     def get_state(self):
         '''
@@ -103,10 +102,10 @@ class WorldSimulator:
 if __name__ == "__main__":
     # simple test case
     world = WorldSimulator()
-    world.move('N')
+    world.step('N')
     print(world.agent_x, world.agent_y) # the agent should still be at (1, 1) since it hit a wall
-    world.move('S')
-    world.move('S')
+    world.step('S')
+    world.step('S')
     print(world.get_state()) # in the goal row, so the y goal direction should be zero
     for i in range(0, 6):
         print(world.move('E')) # last reward should be 20
