@@ -100,13 +100,14 @@ class WorldSimulator:
         return self.maze_info[self.agent_y][self.agent_x]
 
 
-# simple test case
-world = WorldSimulator()
-world.move('N')
-print(world.agent_x, world.agent_y) # the agent should still be at (1, 1) since it hit a wall
-world.move('S')
-world.move('S')
-print(world.get_state()) # in the goal row, so the y goal direction should be zero
-for i in range(0, 6):
-    print(world.move('E')) # last reward should be 20
-print(world.get_state()) # at goal location, so the first two indices should both be zero
+if __name__ == "__main__":
+    # simple test case
+    world = WorldSimulator()
+    world.move('N')
+    print(world.agent_x, world.agent_y) # the agent should still be at (1, 1) since it hit a wall
+    world.move('S')
+    world.move('S')
+    print(world.get_state()) # in the goal row, so the y goal direction should be zero
+    for i in range(0, 6):
+        print(world.move('E')) # last reward should be 20
+    print(world.get_state()) # at goal location, so the first two indices should both be zero
