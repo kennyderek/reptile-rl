@@ -1,4 +1,5 @@
 from copy import copy
+from random import randint
 
 class WorldSimulator:
 
@@ -6,14 +7,14 @@ class WorldSimulator:
         
         self.maze = []
 
-        self.num_row = 10
-        self.num_col = 10
+        self.num_row = 15
+        self.num_col = 15
 
         self.agent_x = 1
         self.agent_y = 1
 
         self.goal_x = 7
-        self.goal_y = 3
+        self.goal_y = 5
 
         # generates an empty maze, W stands for a wall square
         top_bottom = ['W'] * self.num_col
@@ -28,7 +29,6 @@ class WorldSimulator:
         self.maze_info = [[[] for c in range(self.num_col)] for r in range(self.num_col)]
         for y in range(self.num_col):
             for x in range(self.num_row):
-
                 # find goal direction
                 # currently encode left, right as -1, 1, and down, up as -1, 1
                 goal_dir_encoding = [0, 0]
@@ -38,9 +38,9 @@ class WorldSimulator:
                     goal_dir_encoding[0] = -1
                 
                 if y < self.goal_y:
-                    goal_dir_encoding[1] = -1
-                elif y > self.goal_y:
                     goal_dir_encoding[1] = 1
+                elif y > self.goal_y:
+                    goal_dir_encoding[1] = -1
 
                 # get distance to nearest wall in each direction [N, S, E, W]
                 wall_dist = [0, 0, 0, 0]
@@ -59,7 +59,8 @@ class WorldSimulator:
                 while self.maze[y][x_temp] != 'W': # W
                     wall_dist[3] += 1
                     x_temp -= 1
-                self.maze_info[y][x] = goal_dir_encoding + wall_dist
+                self.maze_info[y][x] = goal_dir_encoding + [x, y]
+
 
     def __str__(self):
         s = ""
@@ -88,9 +89,10 @@ class WorldSimulator:
         # calculate reward
         reward = 0
         if self.maze[self.agent_y][self.agent_x] == 'G':
-            return None, 20
+            return None, 1
         else:
-            return self.get_state(), -1
+            return self.get_state(), 0.005 * -((self.agent_x - self.goal_x)**2 + abs(self.agent_y - self.goal_y)**2)**(1/2)
+            # return self.get_state(), -1
 
     def get_state(self):
         '''
