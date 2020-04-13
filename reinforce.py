@@ -17,7 +17,7 @@ class Policy(nn.Module):
     def __init__(self):
         super(Policy, self).__init__()
 
-        self.input_size = 6
+        self.input_size = 4
         self.hidden_size = 64
         self.num_actions = 4
 
@@ -38,6 +38,7 @@ class Policy(nn.Module):
 
 def generate_episode(policy, T):
     env = WorldSimulator()
+    # print(env)
 
     S, A, R = [], [], []
     for i in range(0, T):
@@ -60,25 +61,32 @@ def generate_episode(policy, T):
     
     return S, A, R
 
-
 def reinforce(policy, num_episodes):
-    T = 100 # number of steps per episode
-    alpha = .001
+    T = 20 # number of steps per episode
+    alpha = .0001 # learning rate suggested in Sutton and Barto is 1e-13
     cumulative_rewards = []
-    optimizer = optim.Adam(policy.parameters(), lr=1e-4)
+    optimizer = optim.Adam(policy.parameters(), lr=1e-5)
+    lam = 0.9
 
-    for _ in tqdm(range(num_episodes)):
+    for i in tqdm(range(num_episodes)):
         S, A, R = generate_episode(policy, T)
         cumulative_rewards.append(sum(R))
 
+        if i % 100 == 0:
+            print("Average total reward:", sum(cumulative_rewards[-10:])/ 10)
+            if i % 1000 == 0:
+                # print(S)
+                # print(A)
+                pass
+
         for t in range(len(S)):
-            G = sum(R[t+1:]) # does not include discount rate lambda
+            G = sum([R[k] * lam**(k - t - 1) for k in range(t+1, len(S))])
 
             # delta_Theta = alpha * r * d/dTheta[log(p(a| theta, state_t))]
             # https://pytorch.org/docs/stable/distributions.html
             action_probs = policy(Variable(S[t]))
             m = Categorical(action_probs)
-            loss = -m.log_prob(A[t]) * R[t] * alpha
+            loss = -m.log_prob(A[t]) * R[t] * alpha * lam**t
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -86,9 +94,11 @@ def reinforce(policy, num_episodes):
     return cumulative_rewards
 
 if __name__ == "__main__":
-    num_episodes = 500
+    num_episodes = 2000
     policy = Policy()
     cumulative_rewards = reinforce(policy, num_episodes)
 
-    plt.plot(list(range(num_episodes)), cumulative_rewards)
+    running_average = [sum(cumulative_rewards[max(0, i-5):i])/5 for i in range(len(cumulative_rewards))]
+
+    plt.plot(list(range(num_episodes)), running_average)
     plt.show()
