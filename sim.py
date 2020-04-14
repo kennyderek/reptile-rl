@@ -108,7 +108,9 @@ class ShortCorridor:
 
         self.agent_x = 0
 
-        self.goal_x = 5
+        self.goal_x = 6
+
+        self.reverse_states = [1, 3]
 
     def step(self, action):
         '''
@@ -119,12 +121,12 @@ class ShortCorridor:
             if self.agent_x == 0:
                 self.agent_x == self.goal_x
 
-            if self.agent_x == 1:# or self.agent_x == 3:
+            if self.agent_x in self.reverse_states:
                 self.agent_x += 1 # left goes right
             else:
                 self.agent_x -= 1
         elif action == 'R':
-            if self.agent_x == 1:# or self.agent_x == 3:
+            if self.agent_x in self.reverse_states:
                 self.agent_x -= 1
             else:
                 self.agent_x += 1
