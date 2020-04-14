@@ -1,7 +1,9 @@
 from copy import copy
 from random import randint
+from random import random
+import matplotlib.pyplot as plt
 
-class WorldSimulator:
+class MazeSimulator:
 
     def __init__(self):
         
@@ -13,7 +15,7 @@ class WorldSimulator:
         self.agent_x = 1
         self.agent_y = 1
 
-        self.goal_x = 7
+        self.goal_x = 3
         self.goal_y = 5
 
         # generates an empty maze, W stands for a wall square
@@ -59,7 +61,7 @@ class WorldSimulator:
                 while self.maze[y][x_temp] != 'W': # W
                     wall_dist[3] += 1
                     x_temp -= 1
-                self.maze_info[y][x] = goal_dir_encoding + [x, y]
+                self.maze_info[y][x] = [x, y]
 
 
     def __str__(self):
@@ -89,9 +91,9 @@ class WorldSimulator:
         # calculate reward
         reward = 0
         if self.maze[self.agent_y][self.agent_x] == 'G':
-            return None, 1
+            return None, 0
         else:
-            return self.get_state(), 0.005 * -((self.agent_x - self.goal_x)**2 + abs(self.agent_y - self.goal_y)**2)**(1/2)
+            return self.get_state(), -((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2)
             # return self.get_state(), -1
 
     def get_state(self):
@@ -100,15 +102,100 @@ class WorldSimulator:
         '''
         return self.maze_info[self.agent_y][self.agent_x]
 
+class ShortCorridor:
+
+    def __init__(self):
+
+        self.agent_x = 0
+
+        self.goal_x = 5
+
+    def step(self, action):
+        '''
+        action: 'N', 'S', 'E', or 'W' to move on the map
+        return: next_state (vector, or None if terminal), reward (int)
+        '''
+        if action == 'L':
+            if self.agent_x == 0:
+                self.agent_x == self.goal_x
+
+            if self.agent_x == 1:# or self.agent_x == 3:
+                self.agent_x += 1 # left goes right
+            else:
+                self.agent_x -= 1
+        elif action == 'R':
+            if self.agent_x == 1:# or self.agent_x == 3:
+                self.agent_x -= 1
+            else:
+                self.agent_x += 1
+        
+        if self.agent_x < 0:
+            self.agent_x = 0
+        if self.agent_x > self.goal_x:
+            self.agent_x = self.goal_x
+
+        if self.agent_x == self.goal_x:
+            return None, 0
+        else:
+            return self.get_state(), self.agent_x - self.goal_x
+
+    def get_state(self):
+        '''
+        returns the maze info vector corresponding to the agent's current x, y position
+        '''
+        # l = [0, 0, 0, 0, 0]
+        # l[self.agent_x] = 1
+        # return l
+        return [self.agent_x]
 
 if __name__ == "__main__":
-    # simple test case
-    world = WorldSimulator()
-    world.step('N')
-    print(world.agent_x, world.agent_y) # the agent should still be at (1, 1) since it hit a wall
-    world.step('S')
-    world.step('S')
-    print(world.get_state()) # in the goal row, so the y goal direction should be zero
-    for i in range(0, 6):
-        print(world.move('E')) # last reward should be 20
-    print(world.get_state()) # at goal location, so the first two indices should both be zero
+    # # simple test case
+    # world = WorldSimulator()
+    # world.step('N')
+    # print(world.agent_x, world.agent_y) # the agent should still be at (1, 1) since it hit a wall
+    # world.step('S')
+    # world.step('S')
+    # print(world.get_state()) # in the goal row, so the y goal direction should be zero
+    # for i in range(0, 6):
+    #     print(world.step('E')) # last reward should be 20
+    # print(world.get_state()) # at goal location, so the first two indices should both be zero
+
+
+
+    # print("*****")
+    # env = ShortCorridor()
+    # print(env.step("L"), env.agent_x) # -1 (0)
+    # print(env.step("R"), env.agent_x) # -1 (1)
+    # print(env.step("R"), env.agent_x) # -1 (0)
+    # print(env.step("R"), env.agent_x) # -1 (1)
+    # print(env.step("L"), env.agent_x) # -1 (2)
+    # print(env.step("R"), env.agent_x) # None (3)
+
+
+    mean_rewards = []
+    upper_range = 100
+    for i in range(1, upper_range):
+        epsilon = i/upper_range
+
+        num_trials = 600
+        all_rewards = []
+        for n in range(num_trials):
+            state = 0
+            total_reward = 0
+            num_steps = 0
+            env = ShortCorridor()
+            while state != None and num_steps < 50:
+                num_steps += 1
+                if random() < epsilon:
+                    state, reward = env.step('R')
+                else:
+                    state, reward = env.step('L')
+                total_reward += reward
+            all_rewards.append(total_reward)
+        mean_reward = sum(all_rewards)/len(all_rewards)
+        mean_rewards.append(mean_reward)
+
+    plt.plot(list(range(1, upper_range)), mean_rewards)
+    plt.show()
+
+
