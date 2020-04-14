@@ -26,7 +26,7 @@ class Policy(nn.Module):
 
         self.fc1 = nn.Linear(self.input_size, self.hidden_size)
         self.fc2 = nn.Linear(self.hidden_size, self.hidden_size)
-        self.fc3 = nn.Linear(self.hidden_size, self.hidden_size)
+        # self.fc3 = nn.Linear(self.hidden_size, self.hidden_size)
         # self.fc4 = nn.Linear(self.hidden_size, self.hidden_size)
 
         self.fc5 = nn.Linear(self.hidden_size, self.num_actions)
@@ -40,15 +40,13 @@ class Policy(nn.Module):
         '''
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
+        # x = F.relu(self.fc3(x))
         # x = F.relu(self.fc4(x))
 
         x = self.fc5(x)
         return self.softmax(x)
 
-def generate_episode(policy, T):
-    env = WORLD()
-
+def generate_episode(policy, env, T):
     S, A, R = [], [], []
     for i in range(0, T):
         state = Variable(torch.FloatTensor(env.get_state()))
@@ -94,8 +92,10 @@ def reinforce(policy, lr):
         batch_weights = []
         batch_rewards = []
 
+        # should an epoch be within a single world?  
+        env = WORLD()
         for _ in range(NUM_EPISODES_PER_EPOCH):
-            S, A, R = generate_episode(policy, MAX_EPISODE_LEN)
+            S, A, R = generate_episode(policy, env, MAX_EPISODE_LEN)
             cumulative_rewards_batch.append(sum(R))
 
             for t in range(len(S) - 1):
@@ -104,6 +104,10 @@ def reinforce(policy, lr):
                 batch_states.append(S[t].data.numpy())
                 batch_actions.append(A[t])
                 batch_weights.append(G)
+
+            # Do we need to do this? What if we generate a new env within a batch gradient update?
+            env.reset_soft()
+            # env = WORLD()
 
         batch_policy_loss = compute_policy_loss(policy=policy,
                                 state=torch.as_tensor(batch_states, dtype=torch.float32),
@@ -120,6 +124,7 @@ def reinforce(policy, lr):
 
     return cumulative_rewards
 
+# def visualize_policy(policy):
 
 def train_one_run(learning_rate):
     '''
@@ -144,10 +149,10 @@ if __name__ == "__main__":
     '''
     parameters for the training
     '''
-    NUM_RUNS = 2 # number of times to train a policy from scratch (to handle bad random seed, etc.)
-    NUM_EPOCHS = 800 # an epoch is a complete walkthrough of NUM_EPISODES_PER_EPOCH games
+    NUM_RUNS = 1 # number of times to train a policy from scratch (to handle bad random seed, etc.)
+    NUM_EPOCHS = 1000 # an epoch is a complete walkthrough of NUM_EPISODES_PER_EPOCH games
     NUM_EPISODES_PER_EPOCH = 5
-    MAX_EPISODE_LEN = 90
+    MAX_EPISODE_LEN = 100
 
     for learning_rate in [1e-3]:
         all_runs = []

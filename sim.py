@@ -15,8 +15,27 @@ class MazeSimulator:
         self.agent_x = 1
         self.agent_y = 1
 
-        self.goal_x = 3
+        '''
+        Static goal location
+        '''
+        self.goal_x = 4
         self.goal_y = 5
+
+        '''
+        The VPG algorithm seems to be able to solve this
+        '''
+        # self.goal_x = 5 + randint(-1, 1)
+        # self.goal_y = 5 + randint(-1, 1)
+
+        '''
+        But not this setting -- possibly because something like this would require memory? 
+        '''
+        # if random() > 0.5:
+        #     self.goal_x = 5
+        #     self.goal_y = 1
+        # else:
+        #     self.goal_x = 1
+        #     self.goal_y = 5
 
         # generates an empty maze, W stands for a wall square
         top_bottom = ['W'] * self.num_col
@@ -28,7 +47,7 @@ class MazeSimulator:
         self.maze[self.goal_y][self.goal_x] = 'G'
     
         # generates an information vector for each square
-        self.maze_info = [[[] for c in range(self.num_col)] for r in range(self.num_col)]
+        self.maze_info = [[[] for c in range(self.num_col)] for r in range(self.num_row)]
         for y in range(self.num_col):
             for x in range(self.num_row):
                 # find goal direction
@@ -63,6 +82,12 @@ class MazeSimulator:
                     x_temp -= 1
                 self.maze_info[y][x] = [x, y]
 
+    def reset_soft(self):
+        '''
+        keeps any environment instance-specific (randomly drawn) parameters the same, but resets the agent
+        '''
+        self.agent_x = 1
+        self.agent_y = 1
 
     def __str__(self):
         s = ""
@@ -93,8 +118,8 @@ class MazeSimulator:
         if self.maze[self.agent_y][self.agent_x] == 'G':
             return None, 0
         else:
-            return self.get_state(), -((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2)
-            # return self.get_state(), -1
+            # return self.get_state(), -((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2)
+            return self.get_state(), -1
 
     def get_state(self):
         '''
