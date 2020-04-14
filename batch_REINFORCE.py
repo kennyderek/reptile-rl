@@ -47,8 +47,7 @@ class Policy(nn.Module):
         return self.softmax(x)
 
 def generate_episode(policy, T):
-    env = ShortCorridor()
-    # print(env)
+    env = WORLD()
 
     S, A, R = [], [], []
     for i in range(0, T):
@@ -138,9 +137,9 @@ if __name__ == "__main__":
     '''
     parameters to be changed if the environment changes
     '''
-    STATE_INPUT_SIZE = 1
-    WORLD = ["CORRIDOR", "MAZE"][0]
-    ACTION_SPACE = {"CORRIDOR": {0: "R", 1: "L"}, "MAZE": {0: "N", 1: "S", 2: "E", 3: "W"}}[WORLD]
+    STATE_INPUT_SIZE = 2
+    WORLD = [ShortCorridor, MazeSimulator][1]
+    ACTION_SPACE = {ShortCorridor: {0: "R", 1: "L"}, MazeSimulator: {0: "N", 1: "S", 2: "E", 3: "W"}}[WORLD]
 
     '''
     parameters for the training
@@ -152,7 +151,6 @@ if __name__ == "__main__":
 
     for learning_rate in [1e-3]:
         all_runs = []
-        all_action_probs = []
 
         for run_iter in range(0, NUM_RUNS):
             print("Starting run number:", run_iter)
