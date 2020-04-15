@@ -81,9 +81,10 @@ def reinforce(policy, lr):
     opt_p = optim.Adam(policy.parameters(), lr=lr)
     lam = 0.9
 
-    for i in tqdm(range(NUM_EPOCHS)):
+    for i in tqdm(range(NUM_EPOCHS+1)):
 
-        if i % 50 == 0 and i > 0:
+        if i % 200 == 0 and i > 0:
+            WORLD().visualize(policy, i)
             print("Average total reward:", sum(cumulative_rewards[-10:])/min(10, len(cumulative_rewards)))
 
         cumulative_rewards_batch = []
@@ -95,6 +96,7 @@ def reinforce(policy, lr):
         # should an epoch be within a single world?  
         env = WORLD()
         for _ in range(NUM_EPISODES_PER_EPOCH):
+            env = WORLD()
             S, A, R = generate_episode(policy, env, MAX_EPISODE_LEN)
             cumulative_rewards_batch.append(sum(R))
 
@@ -107,7 +109,6 @@ def reinforce(policy, lr):
 
             # Do we need to do this? What if we generate a new env within a batch gradient update?
             env.reset_soft()
-            # env = WORLD()
 
         batch_policy_loss = compute_policy_loss(policy=policy,
                                 state=torch.as_tensor(batch_states, dtype=torch.float32),
@@ -149,8 +150,9 @@ if __name__ == "__main__":
     '''
     parameters for the training
     '''
+    VISUALIZE_POLICY = True
     NUM_RUNS = 1 # number of times to train a policy from scratch (to handle bad random seed, etc.)
-    NUM_EPOCHS = 1000 # an epoch is a complete walkthrough of NUM_EPISODES_PER_EPOCH games
+    NUM_EPOCHS = 2000 # an epoch is a complete walkthrough of NUM_EPISODES_PER_EPOCH games
     NUM_EPISODES_PER_EPOCH = 5
     MAX_EPISODE_LEN = 100
 
@@ -164,7 +166,7 @@ if __name__ == "__main__":
         data = np.mean(np.array(all_runs), axis=0)
 
         for run in all_runs:
-            plt.plot(list(range(NUM_EPOCHS)), run)
+            plt.plot(list(range(len(run))), run)
         plt.savefig("LearningRate%s.png" % (learning_rate))
         plt.clf()
 
