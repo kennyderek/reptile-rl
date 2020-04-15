@@ -38,14 +38,14 @@ class Cell:
 class Maze:
 	'''Represents a maze as a grid of cells'''
 
-	def __init__(self, num_rows, num_cols, num_walls, start_row, start_col):
+	def __init__(self, num_rows, num_cols, num_walls, start_row, start_col, goal = None):
 		self.num_rows = num_rows
 		self.num_cols = num_cols
 		self.start_row = start_row
 		self.start_col = start_col
 		self.num_walls = num_walls
 		self.num_interior_walls = 2*(self.num_rows)*(self.num_rows+1)-(self.num_rows*2 + self.num_cols*2)
-		self.goal = None
+		self.goal = goal
 
 		self.maze = [[Cell(row, col) for col in range(num_cols)] for row in range(num_rows)]
 
@@ -186,7 +186,8 @@ class Maze:
 	def generate_maze(self):
 		'''Generates overall maze of maze_cells with specified number of walls and random goal position'''
 		self.make_maze_with_num_walls()
-		self.set_goal()
+		if self.goal is None:
+			self.set_goal()
 		self.generate_maze_of_maze_cells()
 
 
@@ -352,11 +353,12 @@ class Maze_Cell:
 
 
 
-m = Maze(3, 3, 2, 0, 0)
-m.generate_maze()
-prelim = m.print_preliminary_maze()
-print (prelim)
-print (m)
+if __name__ == "__main__":
+	m = Maze(3, 3, 2, 0, 0)
+	m.generate_maze()
+	prelim = m.print_preliminary_maze()
+	print (prelim)
+	print (m)
 
 
 
