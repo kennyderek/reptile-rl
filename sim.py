@@ -2,6 +2,8 @@ from copy import copy
 from random import randint
 from random import random
 import matplotlib.pyplot as plt
+import torch
+import numpy as np
 
 class MazeSimulator:
 
@@ -9,17 +11,22 @@ class MazeSimulator:
         
         self.maze = []
 
-        self.num_row = 15
-        self.num_col = 15
-
-        self.agent_x = 1
-        self.agent_y = 1
+        self.num_row = 7
+        self.num_col = 7
 
         '''
         Static goal location
         '''
-        self.goal_x = 4
-        self.goal_y = 5
+        self.goal_x = 3
+        self.goal_y = 3
+
+        self.agent_x = randint(1, 5)
+        self.agent_y = randint(1, 5)
+        if abs(self.agent_x - self.goal_x) < 2 and abs(self.agent_y - self.goal_y) < 2:
+            self.agent_x = 1
+            self.agent_y = 1 # move off goal state
+        self.initial_x = self.agent_x
+        self.initial_y = self.agent_y
 
         '''
         The VPG algorithm seems to be able to solve this
@@ -86,8 +93,8 @@ class MazeSimulator:
         '''
         keeps any environment instance-specific (randomly drawn) parameters the same, but resets the agent
         '''
-        self.agent_x = 1
-        self.agent_y = 1
+        self.agent_x = self.initial_x
+        self.agent_y = self.initial_y
 
     def __str__(self):
         s = ""
@@ -118,14 +125,44 @@ class MazeSimulator:
         if self.maze[self.agent_y][self.agent_x] == 'G':
             return None, 0
         else:
-            # return self.get_state(), -((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2)
-            return self.get_state(), -1
+            return self.get_state(), -((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2)
+            # return self.get_state(), -1
 
     def get_state(self):
         '''
         returns the maze info vector corresponding to the agent's current x, y position
         '''
         return self.maze_info[self.agent_y][self.agent_x]
+
+    def visualize(self, policy, i):
+        '''
+        Visualize a policy's decisions in a heatmap fashion
+        '''
+
+        # lets make a (row*3)x(col*3) heatmap for the policies decisions
+
+        heatmap = [[0 for c in range(3*self.num_col)] for r in range(3*self.num_row)]
+        action_space = {0: "N", 1: "S", 2: "E", 3: "W"}
+        offsets = {0: (1, 0), 1: (1, 2), 2: (2, 1), 3: (0, 1)} # x, y offsets for heatmap
+        for y in range(1, self.num_row-1):
+            for x in range(1, self.num_col-1):
+                heatmap[3*y + 1][3*x + 1] = 0.5
+
+                upper_left = (x * 3, y * 3) # in x, y
+
+                # get action probs at this state
+                action_probs = policy(torch.as_tensor(self.maze_info[y][x], dtype=torch.float32))
+                for a in [0, 1, 2, 3]: # action space
+                    x_loc = upper_left[0] + offsets[a][0]
+                    y_loc = upper_left[1] + offsets[a][1]
+                    heatmap[y_loc][x_loc] = action_probs[a].item()
+        
+        plt.imshow(np.array(heatmap), cmap='PRGn', interpolation='nearest')
+        plt.savefig("Iteration%sHeatmap" % (i))
+        plt.clf()
+
+        
+
 
 class ShortCorridor:
 

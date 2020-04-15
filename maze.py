@@ -51,8 +51,6 @@ class Maze:
 
 		self.final_maze = None
 
-
-
 	def make_maze(self):
 		'''Creates maze that is solvable'''
 
@@ -79,15 +77,12 @@ class Maze:
 			current_cell = next_cell
 			current_cell_number += 1
 
-
-
 	def generate_random_cell(self):
 		'''Returns random cell in maze grid'''
 		random_row = random.randint(0, self.num_rows-1)
 		random_col = random.randint(0, self.num_cols-1)
 
 		return self.get_cell(random_row, random_col)
-
 
 	def make_maze_with_num_walls(self):
 		'''Generates maze with number of wall specified.  Prunes walls from solvable maze until desired number of walls is reached.'''
