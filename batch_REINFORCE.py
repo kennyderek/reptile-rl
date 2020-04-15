@@ -8,6 +8,7 @@ import torch.optim as optim
 
 import numpy as np
 from sim import MazeSimulator, ShortCorridor
+from maze import Maze
 
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -143,7 +144,9 @@ if __name__ == "__main__":
     parameters to be changed if the environment changes
     '''
     STATE_INPUT_SIZE = 2
-    WORLD = [ShortCorridor, MazeSimulator][1]
+    m = Maze(2, 2, 0, 0, 0, (1, 1))
+    # WORLD = [ShortCorridor, MazeSimulator][1]
+    WORLD = [m, MazeSimulator][1]
     ACTION_SPACE = {ShortCorridor: {0: "R", 1: "L"}, MazeSimulator: {0: "N", 1: "S", 2: "E", 3: "W"}}[WORLD]
 
     '''
