@@ -5,13 +5,11 @@ from maze import Maze
 import matplotlib.pyplot as plt
 import torch
 import numpy as np
-import torch.nn as nn
-import torch.nn.functional as F
 
 
 class MazeSimulator:
 
-    def __init__(self, num_rows = 2, num_cols = 2, num_walls = 0, start = (0,0), goal = (1,1)):
+    def __init__(self, num_rows, num_cols, num_walls, start = None, goal = None):
         self.maze = Maze(num_rows, num_cols, num_walls, start, goal)
 
         self.num_col = self.maze.num_cols
@@ -77,16 +75,8 @@ class MazeSimulator:
 
     def __str__(self):
         s = ""
-        count = 0
-        for row in range(self.num_row):
-            r = ""
-            for col in range(self.num_col):
-                if row == self.agent_row and col == self.agent_col:
-                    r += "*"
-                else:
-                    r += str(self.maze.maze[row][col])
-            r += "\n"
-            s += r
+        for r in self.maze.final_maze:
+            s += "".join(r) + "\n"
         return s
 
     def step(self, action):
@@ -95,8 +85,6 @@ class MazeSimulator:
         return: next_state (vector, or None if terminal), reward (int)
         '''
         # move agent based on action
-        print ("old: ", self.agent_row, self.agent_col)
-        print ("action: ", action)
         delta = {'N': (-1,0),
                 'S': (1,0),
                 'E': (0,1),
@@ -104,28 +92,15 @@ class MazeSimulator:
         self.agent_row += delta[action][0]
         self.agent_col += delta[action][1]
 
-        # if self.agent_row < 0 or self.agent_row >= self.num_row or self.agent_col < 0 or self.agent_col >= self.num_col:
-        #     self.agent_row -= delta[action][0]
-        #     self.agent_col -= delta[action][1]
-        #     return self.get_state(), -((self.agent_row - self.goal.row)**2 + (self.agent_col - self.goal.col)**2)**(1/2)
-
-
         # revert action if unsuccessful
         if self.maze.get_cell(self.agent_row, self.agent_col).is_wall():
-            # print ("yes: ", self.agent_row, self.agent_col)
             self.agent_row -= delta[action][0]
             self.agent_col -= delta[action][1]
-            return self.get_state(), -((self.agent_row - self.goal.row)**2 + (self.agent_col - self.goal.col)**2)**(1/2)
-        else:
-            self.agent_row += delta[action][0]
-            self.agent_col += delta[action][1]
-
-        print ("new: ", self.agent_row, self.agent_col)
 
         # calculate reward
         reward = 0
         if self.maze.get_cell(self.agent_row, self.agent_col).is_goal():
-            return None, 10
+            return None, 0
         else:
             return self.get_state(), -((self.agent_row - self.goal.row)**2 + (self.agent_col - self.goal.col)**2)**(1/2)
             # return self.get_state(), -1
@@ -134,9 +109,7 @@ class MazeSimulator:
         '''
         returns the maze info vector corresponding to the agent's current x, y position
         '''
-        #return self.maze_info[self.agent_row][self.agent_col]
-        loc = np.reshape([self.agent_row, self.agent_col], (1, 2))
-        return [self.agent_row, self.agent_col]
+        return self.maze_info[self.agent_row][self.agent_col]
 
     def visualize(self, policy, i):
         '''
@@ -145,27 +118,24 @@ class MazeSimulator:
 
         # lets make a (row*3)x(col*3) heatmap for the policies decisions
 
-
-        heatmap = [[0 for c in range(self.num_col)] for r in range(self.num_row)]
+        heatmap = [[0 for c in range(3*self.num_col)] for r in range(3*self.num_row)]
         action_space = {0: "N", 1: "S", 2: "E", 3: "W"}
-        offsets = {0: (-1, 0), 1: (1, 0), 2: (0, 1), 3: (0, -1)} # x, y offsets for heatmap
-        for row in range(1, self.num_row, 2):
-            for col in range(1, self.num_col, 2):
-                print (row, col)
-                if self.maze.maze[row][col].is_empty_cell():
-                    heatmap[row][col] = 1
+        offsets = {0: (1, 0), 1: (1, 2), 2: (2, 1), 3: (0, 1)} # x, y offsets for heatmap
+        for row in range(1, self.num_row-1):
+            for col in range(1, self.num_col-1):
+                heatmap[3*row + 1][3*col + 1] = 0.5
+
+                upper_left = (col * 3, row * 3) # in x, y
 
                 # get action probs at this state
-                action_probs = policy(torch.as_tensor(self.get_state(), dtype=torch.float32))
+                action_probs = policy(torch.as_tensor(self.maze_info[row][col], dtype=torch.float32))
                 for a in [0, 1, 2, 3]: # action space
-                    row_loc = row+offsets[a][0]
-                    col_loc = col+offsets[a][1]
-                    print ("a: ", a, action_probs[a].item())
+                    col_loc = upper_left[0] + offsets[a][0]
+                    row_loc = upper_left[1] + offsets[a][1]
                     heatmap[row_loc][col_loc] = action_probs[a].item()
         
-        print (heatmap)
-        plt.imshow(np.array(heatmap), cmap='Blues', interpolation='nearest')
-        plt.savefig("Iteration%sHeatmap_(%s, %s)" % (i, self.agent_row, self.agent_col))
+        plt.imshow(np.array(heatmap), cmap='PRGn', interpolation='nearest')
+        plt.savefig("Iteration%sHeatmap" % (i))
         plt.clf()
 
 
@@ -263,15 +233,8 @@ class MazeSimulator:
 
 #     def __str__(self):
 #         s = ""
-#         count = 0
 #         for r in self.maze:
-#             if count == self.agent_y:
-#                 s += "".join(r[0:self.agent_x])
-#                 s += "*"
-#                 s += "".join(r[self.agent_x+1:self.num_col]) + "\n"
-#             else:
-#                 s += "".join(r) + "\n"
-#             count += 1
+#             s += "".join(r) + "\n"
 #         return s
 
 #     def step(self, action):
@@ -329,7 +292,7 @@ class MazeSimulator:
 #                     y_loc = upper_left[1] + offsets[a][1]
 #                     heatmap[y_loc][x_loc] = action_probs[a].item()
         
-#         plt.imshow(np.array(heatmap), cmap='Blues', interpolation='nearest')
+#         plt.imshow(np.array(heatmap), cmap='PRGn', interpolation='nearest')
 #         plt.savefig("Iteration%sHeatmap" % (i))
 #         plt.clf()
 
@@ -382,88 +345,23 @@ class ShortCorridor:
         # l = [0, 0, 0, 0, 0]
         # l[self.agent_x] = 1
         # return l
-        x = np.array([self.agent_x])
-        # x = np.reshape(x, (1,1))
-        return x
+        return [self.agent_x]
 
-    def visualize(self, policy, i):
-        '''
-        Visualize a policy's decisions in a heatmap fashion
-        '''
-
-        # lets make a (row*3)x(col*3) heatmap for the policies decisions
-
-
-        heatmap = [0 for i in range(24)]
-        action_space = {0: "R", 1: "L"}
-        offsets = {0: 1, 1: -1} # x, y offsets for heatmap
-        for row in range(1, 24, 3):
-
-                heatmap[row] = 1
-                # get action probs at this state
-                action_probs = policy(torch.as_tensor(self.get_state(), dtype=torch.float32))
-                for a in [0, 1]: # action space
-                    x_loc = row+offsets[a]
-                    heatmap[x_loc] = action_probs[a].item()
-        
-        plt.imshow(np.reshape(np.array(heatmap), (1,24)), cmap='Blues', interpolation='nearest')
-        plt.savefig("ShortCorridor_Iteration%sHeatmap_%s)" % (i, self.agent_x))
-        plt.clf()
-
-# if __name__ == "__main__":
-
-
-#     class Policy(nn.Module):
-
-#         def __init__(self):
-#             super(Policy, self).__init__()
-
-#             self.input_size = 2
-#             self.hidden_size = 100
-
-#             self.ACTION_SPACE = {0: "N", 1: "S", 2: "E", 3: "W"}
-
-#             self.num_actions = len(self.ACTION_SPACE.keys())
-
-#             self.fc1 = nn.Linear(self.input_size, self.hidden_size)
-#             self.fc2 = nn.Linear(self.hidden_size, self.hidden_size)
-#             # self.fc3 = nn.Linear(self.hidden_size, self.hidden_size)
-#             # self.fc4 = nn.Linear(self.hidden_size, self.hidden_size)
-
-#             self.fc5 = nn.Linear(self.hidden_size, self.num_actions)
-#             self.softmax = nn.Softmax()
-
-
-#         def forward(self, x):
-#             '''
-#             x: input vector describing state
-#             return: vector containing probabilities?? of each
-#             '''
-#             x = F.relu(self.fc1(x))
-#             x = F.relu(self.fc2(x))
-#             # x = F.relu(self.fc3(x))
-#             # x = F.relu(self.fc4(x))
-
-#             x = self.fc5(x)
-#             return self.softmax(x)
-
-#     world = MazeSimulator(2, 2, 0, (0,0), (1,1))
-#     policy = Policy()
-#     world.visualize(policy, 0)
+if __name__ == "__main__":
     # simple test case
-    # world = MazeSimulator(7, 7, 0, start = (0,0), goal = (3,3))
-    # world.step('N')
-    # print(world.agent_row, world.agent_col) # the agent should still be at (1, 1) since it hit a wall
-    # world.step('S')
-    # world.step('S')
-    # world.step('S')
-    # world.step('S')
-    # world.step('S')
-    # world.step('S')
-    # print(world.get_state()) # in the goal row, so the y goal direction should be zero
-    # for i in range(0, 6):
-    #     print(world.step('E')) # last reward should be 20
-    # print(world.get_state()) # at goal location, so the first two indices should both be zero
+    world = MazeSimulator(7, 7, 0, start = (0,0), goal = (3,3))
+    world.step('N')
+    print(world.agent_row, world.agent_col) # the agent should still be at (1, 1) since it hit a wall
+    world.step('S')
+    world.step('S')
+    world.step('S')
+    world.step('S')
+    world.step('S')
+    world.step('S')
+    print(world.get_state()) # in the goal row, so the y goal direction should be zero
+    for i in range(0, 6):
+        print(world.step('E')) # last reward should be 20
+    print(world.get_state()) # at goal location, so the first two indices should both be zero
 
 
 
