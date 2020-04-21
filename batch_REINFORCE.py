@@ -23,7 +23,11 @@ class Policy(nn.Module):
 
         self.ACTION_SPACE = ACTION_SPACE
 
+        print ("ACTION_SPACE: ", self.ACTION_SPACE)
+
         self.num_actions = len(self.ACTION_SPACE.keys())
+
+        print ("num_actions: ", self.num_actions)
 
         self.fc1 = nn.Linear(self.input_size, self.hidden_size)
         self.fc2 = nn.Linear(self.hidden_size, self.hidden_size)
@@ -55,7 +59,10 @@ def generate_episode(policy, env, T):
         m = Categorical(action_probs)
         action_idx = m.sample()
         action = policy.ACTION_SPACE[action_idx.item()]
+        # print ("old: ", WORLD.agent_row, WORLD.agent_col)
+        # print ("action: ", action)
         next_state, reward = env.step(action)
+        # print ("new: ", WORLD.agent_row, WORLD.agent_col)
 
         S.append(state)
         A.append(action_idx)
@@ -82,10 +89,11 @@ def reinforce(policy, lr):
     opt_p = optim.Adam(policy.parameters(), lr=lr)
     lam = 0.9
 
-    for i in tqdm(range(NUM_EPOCHS+1)):
+    for i in range(NUM_EPOCHS+1):
 
-        if i % 200 == 0 and i > 0:
+        if i % 100 == 0 and i > 0:
             WORLD().visualize(policy, i)
+
             print("Average total reward:", sum(cumulative_rewards[-10:])/min(10, len(cumulative_rewards)))
 
         cumulative_rewards_batch = []
@@ -109,7 +117,7 @@ def reinforce(policy, lr):
                 batch_weights.append(G)
 
             # Do we need to do this? What if we generate a new env within a batch gradient update?
-            env.reset_soft()
+            # env.reset_soft()
 
         batch_policy_loss = compute_policy_loss(policy=policy,
                                 state=torch.as_tensor(batch_states, dtype=torch.float32),
@@ -145,10 +153,18 @@ if __name__ == "__main__":
     parameters to be changed if the environment changes
     '''
     STATE_INPUT_SIZE = 2
-    m = Maze(2, 2, 0, 0, 0, (1, 1))
-    # WORLD = [ShortCorridor, MazeSimulator][1]
-    WORLD = [m, MazeSimulator][1]
-    ACTION_SPACE = {ShortCorridor: {0: "R", 1: "L"}, MazeSimulator: {0: "N", 1: "S", 2: "E", 3: "W"}}[WORLD]
+    # #m = Maze(2, 2, 0, (0,0), (1, 1))
+    # WORLD = [ShortCorridor, MazeSimulator][0]
+    # # WORLD = [m, MazeSimulator][1]
+    # ACTION_SPACE = {ShortCorridor: {0: "R", 1: "L"}, MazeSimulator: {0: "N", 1: "S", 2: "E", 3: "W"}}[WORLD]
+    ACTION_SPACE = {0: "N", 1: "S", 2: "E", 3: "W"}
+    WORLD = MazeSimulator
+    print ("WORLD: ", WORLD())
+    print ("start: ", WORLD().start.row, WORLD().start.col)
+    print ("goal: ", WORLD().goal.row, WORLD().goal.col)
+
+    start_policy = Policy()
+    WORLD().visualize(start_policy, 0)
 
     '''
     parameters for the training
@@ -156,12 +172,12 @@ if __name__ == "__main__":
     VISUALIZE_POLICY = True
     NUM_RUNS = 1 # number of times to train a policy from scratch (to handle bad random seed, etc.)
     NUM_EPOCHS = 2000 # an epoch is a complete walkthrough of NUM_EPISODES_PER_EPOCH games
-    NUM_EPISODES_PER_EPOCH = 5
-    MAX_EPISODE_LEN = 100
+    NUM_EPISODES_PER_EPOCH = 10
+    MAX_EPISODE_LEN = 200
 
     for learning_rate in [1e-3]:
         all_runs = []
-
+        print ("learning_rate: ", learning_rate)
         for run_iter in range(0, NUM_RUNS):
             print("Starting run number:", run_iter)
             all_runs.append(train_one_run(learning_rate))
@@ -172,4 +188,6 @@ if __name__ == "__main__":
             plt.plot(list(range(len(run))), run)
         plt.savefig("LearningRate%s.png" % (learning_rate))
         plt.clf()
+
+    print ("end position: ", env.start_row, env.start_col)
 

@@ -257,6 +257,8 @@ class Prelim_Maze:
 				new_row = 2*row + 1
 				new_col = 2*col + 1
 
+				new_maze[new_row][new_col].set_empty_cell_status()
+
 				if row == self.start.row and col == self.start.col:
 					new_maze[new_row][new_col].set_start()
 				elif row == self.goal.row and col == self.goal.col:
@@ -289,7 +291,20 @@ class Prelim_Maze:
 				new_maze[row][0].set_wall()
 				new_maze[num_cols-1][col].set_wall()
 
-			self.final_maze = new_maze
+		last_row = num_rows-1
+		last_col = num_cols-1
+
+		for col in range(num_cols):
+			new_maze[0][col].set_wall()
+			new_maze[last_row][col].set_wall()
+
+		for row in range(num_rows):
+			new_maze[row][0].set_wall()
+			new_maze[row][last_col].set_wall()
+
+
+		self.final_maze = new_maze
+
 
 	def __str__(self):
 		'''Returns string representation of maze'''
@@ -327,6 +342,7 @@ class Maze_Cell:
 		self.wall_status = False
 		self.start_status = False
 		self.goal_status = False
+		self.empty_cell_status = False
 
 	def is_wall(self):
 		return self.wall_status
@@ -337,6 +353,9 @@ class Maze_Cell:
 	def is_goal(self):
 		return self.goal_status
 
+	def is_empty_cell(self):
+		return self.empty_cell_status
+
 	def set_goal(self):
 		self.goal_status = True
 
@@ -345,6 +364,9 @@ class Maze_Cell:
 
 	def set_start(self):
 		self.start_status = True
+
+	def set_empty_cell_status(self):
+		self.empty_cell_status = True
 
 
 	def __str__(self):
@@ -406,13 +428,13 @@ class Maze:
 
 
 
-if __name__ == "__main__":
-	m = Maze(2, 2, 5, (0, 0))
-	# m.generate_maze()
-	# prelim = m.print_preliminary_maze()
-	# print (prelim)
-	# print (m.goal.row, m.goal.col)
-	print (m)
+# if __name__ == "__main__":
+# 	m = Maze(2, 2, 5, (0, 0))
+# 	# m.generate_maze()
+# 	# prelim = m.print_preliminary_maze()
+# 	# print (prelim)
+# 	# print (m.goal.row, m.goal.col)
+# 	print (m)
 
 
 
