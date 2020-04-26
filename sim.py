@@ -7,87 +7,144 @@ import numpy as np
 
 class MazeSimulator:
 
-    def __init__(self):
+    def __init__(self, goal_X, goal_Y, reward_type, state_rep, wall_penalty=0, normalize_state=True):
         
         self.maze = []
 
-        self.num_row = 7
-        self.num_col = 7
+        self.num_row = 16
+        self.num_col = 9
 
-        '''
-        Static goal location
-        '''
-        self.goal_x = 3
-        self.goal_y = 3
+        self.agent_x = 1
+        self.agent_y = 1
 
-        self.agent_x = randint(1, 5)
-        self.agent_y = randint(1, 5)
-        if abs(self.agent_x - self.goal_x) < 2 and abs(self.agent_y - self.goal_y) < 2:
-            self.agent_x = 1
-            self.agent_y = 1 # move off goal state
+        self.mean_x = self.num_col / 2
+        self.std_dev_x = np.sqrt(1/12*(self.num_col)**2) # assuming uniform distribution over possible vals
+        self.mean_y = self.num_row / 2
+        self.std_dev_y = np.sqrt(1/12*(self.num_row)**2)
+
+        self.reward = reward_type
+        self.wall_penalty = wall_penalty
+        self.normalize_state = normalize_state
+
+        self.state_rep = state_rep
+        self.state_rep_func = {"onehot": self.__get_state_onehot_xy,
+                        "fullboard": self.__get_state_fullboard_xy,
+                        "xy": self.__get_state_xy}[self.state_rep]
+
         self.initial_x = self.agent_x
         self.initial_y = self.agent_y
 
-        '''
-        The VPG algorithm seems to be able to solve this
-        '''
-        # self.goal_x = 5 + randint(-1, 1)
-        # self.goal_y = 5 + randint(-1, 1)
+        self.action_space = {0: "N", 1: "S", 2: "E", 3: "W"}
 
-        '''
-        But not this setting -- possibly because something like this would require memory? 
-        '''
-        # if random() > 0.5:
-        #     self.goal_x = 5
-        #     self.goal_y = 1
-        # else:
-        #     self.goal_x = 1
-        #     self.goal_y = 5
+        self.num_actions = 4
+        if self.state_rep == "fullboard":
+            self.state_size = self.num_row * self.num_col
+        elif self.state_rep == "onehot":
+            self.state_size = self.num_row * self.num_col
+        elif self.state_rep == "xy":
+            self.state_size = 2
+        
+        # self.state_size = 2
 
         # generates an empty maze, W stands for a wall square
-        top_bottom = ['W'] * self.num_col
-        middle = ['W'] + [' '] * (self.num_col - 2) + ['W']
-        self.maze.append(copy(top_bottom))
-        for _ in range(self.num_row - 2):
-            self.maze.append(copy(middle))
-        self.maze.append(copy(top_bottom))
+        # top_bottom = ['W'] * self.num_col
+        # middle = ['W'] + [' '] * (self.num_col - 2) + ['W']
+        # self.maze.append(copy(top_bottom))
+        # for _ in range(self.num_row - 2):
+        #     self.maze.append(copy(middle))
+        # self.maze.append(copy(top_bottom))
+        # self.maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
+        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        #              ["W", "W", "W", "W", "W", "W", " ", " ", "W"],
+        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        #              ["W", " ", "W", "W", "W", "W", "W", "W", "W"],
+        #              ["W", " ", "W", " ", " ", " ", "W", " ", "W"],
+        #              ["W", " ", "W", " ", "W", " ", "W", " ", "W"],
+        #              ["W", " ", "W", " ", "W", " ", "W", " ", "W"],
+        #              ["W", " ", " ", " ", "W", " ", "W", " ", "W"],
+        #              ["W", "W", "W", "W", "W", " ", " ", " ", "W"],
+        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        #              ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
+        self.maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
+                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+                ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+                ["W", " ", " ", " ", "W", " ", "W", "W", "W"],
+                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+                ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+                ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
+
+        self.goal_x = goal_X
+        self.goal_y = goal_Y
+
         self.maze[self.goal_y][self.goal_x] = 'G'
-    
+
         # generates an information vector for each square
         self.maze_info = [[[] for c in range(self.num_col)] for r in range(self.num_row)]
-        for y in range(self.num_col):
-            for x in range(self.num_row):
+        # print(self.maze_info)
+        for x in range(1, self.num_col-1):
+            for y in range(1, self.num_row-1):
+                # check if a wall is in each direction
+                walls = [0, 0, 0, 0]
+                if self.maze[y + 1][x] == "W":
+                    walls[0] = 1
+                if self.maze[y - 1][x] == "W":
+                    walls[1] = 1
+                if self.maze[y][x + 1] == "W":
+                    walls[2] = 1
+                if self.maze[y][x - 1] == "W":
+                    walls[3] = 1
+                
                 # find goal direction
                 # currently encode left, right as -1, 1, and down, up as -1, 1
-                goal_dir_encoding = [0, 0]
-                if x < self.goal_x:
-                    goal_dir_encoding[0] = 1
-                elif x > self.goal_x:
-                    goal_dir_encoding[0] = -1
+                # goal_dir_encoding = [0, 0]
+                # if x < self.goal_x:
+                #     goal_dir_encoding[0] = 1
+                # elif x > self.goal_x:
+                #     goal_dir_encoding[0] = -1
                 
-                if y < self.goal_y:
-                    goal_dir_encoding[1] = 1
-                elif y > self.goal_y:
-                    goal_dir_encoding[1] = -1
+                # if y < self.goal_y:
+                #     goal_dir_encoding[1] = 1
+                # elif y > self.goal_y:
+                #     goal_dir_encoding[1] = -1
 
-                # get distance to nearest wall in each direction [N, S, E, W]
-                wall_dist = [0, 0, 0, 0]
-                x_temp, y_temp = x, y
-                while self.maze[y_temp][x] != 'W': # N
-                    wall_dist[0] += 1
-                    y_temp -= 1
-                y_temp = y
-                while self.maze[y_temp][x] != 'W': # S
-                    wall_dist[1] += 1
-                    y_temp += 1
-                while self.maze[y][x_temp] != 'W': # E
-                    wall_dist[2] += 1
-                    x_temp += 1
-                x_temp = x
-                while self.maze[y][x_temp] != 'W': # W
-                    wall_dist[3] += 1
-                    x_temp -= 1
-                self.maze_info[y][x] = [x, y]
+                # # get distance to nearest wall in each direction [N, S, E, W]
+                # wall_dist = [0, 0, 0, 0]
+                # x_temp, y_temp = x, y
+                # while self.maze[y_temp][x] != 'W': # N
+                #     wall_dist[0] += 1
+                #     y_temp -= 1
+                # y_temp = y
+                # while self.maze[y_temp][x] != 'W': # S
+                #     wall_dist[1] += 1
+                #     y_temp += 1
+                # while self.maze[y][x_temp] != 'W': # E
+                #     wall_dist[2] += 1
+                #     x_temp += 1
+                # x_temp = x
+                # while self.maze[y][x_temp] != 'W': # W
+                #     wall_dist[3] += 1
+                #     x_temp -= 1
+                self.maze_info[y][x] = self.state_rep_func(x, y)
+
+    def __get_action(self, policy_output):
+        return self.action_space[policy_output.item()]
+
+    def generate_fresh(self):
+        # self.reset_soft()
+        return MazeSimulator(self.goal_x, self.goal_y, self.reward, self.state_rep, self.wall_penalty)
 
     def reset_soft(self):
         '''
@@ -102,11 +159,13 @@ class MazeSimulator:
             s += "".join(r) + "\n"
         return s
 
-    def step(self, action):
+    def step(self, policy_output):
         '''
         action: 'N', 'S', 'E', or 'W' to move on the map
         return: next_state (vector, or None if terminal), reward (int)
         '''
+        action = self.__get_action(policy_output)
+
         # move agent based on action
         delta = {'N': (0,-1),
                 'S': (0,1),
@@ -115,53 +174,97 @@ class MazeSimulator:
         self.agent_x += delta[action][0]
         self.agent_y += delta[action][1]
 
+        penalty = 0
         # revert action if unsuccessful
         if self.maze[self.agent_y][self.agent_x] == 'W':
             self.agent_x -= delta[action][0]
             self.agent_y -= delta[action][1]
+            penalty = self.wall_penalty
 
-        # calculate reward
-        reward = 0
         if self.maze[self.agent_y][self.agent_x] == 'G':
-            return None, 0
+            return self.get_state(), 0
         else:
-            return self.get_state(), -((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2)
-            # return self.get_state(), -1
+            if self.reward == "distance":
+                return self.get_state(), penalty-((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2)
+            elif self.reward == "constant":
+                return self.get_state(), penalty-1
 
     def get_state(self):
         '''
         returns the maze info vector corresponding to the agent's current x, y position
         '''
-        return self.maze_info[self.agent_y][self.agent_x]
+        if self.maze[self.agent_y][self.agent_x] == 'G':
+            return None
+        else:
+            return self.maze_info[self.agent_y][self.agent_x]
 
-    def visualize(self, policy, i):
+    def __get_state_xy(self, x, y):
+        '''
+        returns the maze info vector corresponding to the agent's current x, y position
+        '''
+        if self.normalize_state:
+            return [(x - self.mean_x) / self.std_dev_x, (y - self.mean_y) / self.std_dev_y]
+        else:
+            return [x, y]
+
+    def __get_state_onehot_xy(self, x, y):
+        l = [0] * (self.num_row + self.num_col)
+        l[x] = 1
+        l[y + self.num_col] = 1
+        return l
+
+    def __get_state_fullboard_xy(self, x, y):
+        l = [0] * (self.num_row * self.num_col)
+        l[y*self.num_col + x] = 1
+        # l[y + self.num_row] = 1
+        return l
+
+    def visualize(self, policy):
         '''
         Visualize a policy's decisions in a heatmap fashion
         '''
 
-        # lets make a (row*3)x(col*3) heatmap for the policies decisions
-
         heatmap = [[0 for c in range(3*self.num_col)] for r in range(3*self.num_row)]
-        action_space = {0: "N", 1: "S", 2: "E", 3: "W"}
         offsets = {0: (1, 0), 1: (1, 2), 2: (2, 1), 3: (0, 1)} # x, y offsets for heatmap
         for y in range(1, self.num_row-1):
             for x in range(1, self.num_col-1):
-                heatmap[3*y + 1][3*x + 1] = 0.5
+                if self.maze[y][x] != "W":                    
+                    heatmap[3*y + 1][3*x + 1] = 0.5
 
-                upper_left = (x * 3, y * 3) # in x, y
+                    upper_left = (x * 3, y * 3) # in x, y
 
-                # get action probs at this state
-                action_probs = policy(torch.as_tensor(self.maze_info[y][x], dtype=torch.float32))
-                for a in [0, 1, 2, 3]: # action space
-                    x_loc = upper_left[0] + offsets[a][0]
-                    y_loc = upper_left[1] + offsets[a][1]
-                    heatmap[y_loc][x_loc] = action_probs[a].item()
-        
+                    # get action probs at this state
+                    action_probs = policy(torch.as_tensor(self.maze_info[y][x], dtype=torch.float32))
+                    for a in [0, 1, 2, 3]: # action space
+                        x_loc = upper_left[0] + offsets[a][0]
+                        y_loc = upper_left[1] + offsets[a][1]
+                        heatmap[y_loc][x_loc] = action_probs[a].item()
+
+
         plt.imshow(np.array(heatmap), cmap='PRGn', interpolation='nearest')
-        plt.savefig("Iteration%sHeatmap" % (i))
+        plt.savefig("Heatmap")
         plt.clf()
 
-        
+    def visualize_value(self, critic):
+        '''
+        Visualize the value of each state
+        '''
+
+        heatmap = [[0 for c in range(self.num_col)] for r in range(self.num_row)]
+        for y in range(1, self.num_row-1):
+            for x in range(1, self.num_col-1):
+                if self.maze[y][x] == "W":
+                    heatmap[y][x] = 0
+                else:
+                    heatmap[y][x] = critic(torch.as_tensor(self.maze_info[y][x], dtype=torch.float32)).item()
+
+        plt.imshow(np.array(heatmap), cmap='PRGn', interpolation='nearest')
+        plt.savefig("Valuemap")
+        plt.clf()
+
+
+
+
 
 
 class ShortCorridor:
@@ -263,3 +366,12 @@ if __name__ == "__main__":
     plt.show()
 
 
+'''
+    observation is the current 2D position
+
+    reward is negative distance to goal
+
+    actions are velocity commands clipped to [-0.1, 0.1]
+
+    Horizon is 100, environment ended when agent was within 0.01 of goal
+'''
