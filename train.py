@@ -34,8 +34,8 @@ if __name__ == "__main__":
     Is a batch_size of 1 better?! It seems to get to the solution more quickly? It is because it is easier to 
     attribute cause/effect?
     '''
-    model = A2C(world.state_size, world.num_actions, seed=1, lr=1e-5, use_opt=True)
-    rewards = model.train(world, num_batches=2000, batch_size=5, horizon=100)
+    model = A2C(world.state_size, world.num_actions, seed=1, lr=1e-5, use_opt=True, ppo=True)
+    rewards = model.train(world, num_batches=1000, batch_size=20, horizon=100)
 
     world.visualize(model.policy)
     world.visualize_value(model.critic)

@@ -20,7 +20,7 @@ class Actor(nn.Module):
         self.fc2_a = nn.Linear(self.hidden_size, self.hidden_size)
         self.fc3_a = nn.Linear(self.hidden_size, self.hidden_size)
         self.fc4_a = nn.Linear(self.hidden_size, self.hidden_size)
-        self.fc5_a = nn.Linear(self.hidden_size, self.hidden_size)
+        # self.fc5_a = nn.Linear(self.hidden_size, self.hidden_size)
         self.fc6_a = nn.Linear(self.hidden_size, self.action_space_size)
         self.softmax = nn.Softmax()
 
@@ -33,7 +33,7 @@ class Actor(nn.Module):
         x = F.relu(self.fc2_a(x))
         x = F.relu(self.fc3_a(x))
         x = F.relu(self.fc4_a(x))
-        x = F.relu(self.fc5_a(x))
+        # x = F.relu(self.fc5_a(x))
         x = self.fc6_a(x)
         return self.softmax(x)
 
