@@ -165,7 +165,7 @@ class A2C(nn.Module):
 
     In our evaluation, we compare adaptation to a new task with up to 4 gradient updates, each with 40 samples.
     '''
-    def train(self, env, num_batches = 1, batch_size = 20, horizon = 100, batch_envs=None):
+    def train(self, env, num_batches = 1, batch_size = 20, horizon = 100, envs_per_batch=None, batch_envs=None):
         '''
         Train using batch_size samples of complete trajectories, num_batches times (so num_batches gradient updates)
         
@@ -177,11 +177,13 @@ class A2C(nn.Module):
             self.old_policy.load_state_dict(copy.deepcopy(self.policy.state_dict()))
 
         for batch in tqdm(range(num_batches)):
-
-            if batch_envs == None:
-                parallel_envs = [env.generate_fresh() for _ in range(batch_size)]
+            if envs_per_batch == None:
+                if batch_envs == None:
+                    parallel_envs = [env.generate_fresh() for _ in range(batch_size)]
+                else:
+                    assert len(batch_envs) == batch_size, "supplied envs must match "
             else:
-                assert len(batch_envs) == batch_size, "supplied envs must match "
+                parallel_envs = [envs_per_batch[batch % len(envs_per_batch)] for _ in range(batch_size)]
 
             batch_states = []
             batch_actions = []
