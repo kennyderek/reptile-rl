@@ -30,7 +30,6 @@ class A2C(nn.Module):
         self.state_input_size = state_input_size
         self.action_space_size = action_space_size
 
-        # self.actor = Actor(state_input_size, action_space_size)
         self.critic = Critic(state_input_size, 1)
 
         self.policy = Actor(state_input_size, action_space_size)
@@ -89,12 +88,12 @@ class A2C(nn.Module):
             advantages = (advantages - mean) / std  
         return advantages
 
-    def update_params(self, loss, step_size=0.1):
+    def update_params(self, params, loss, step_size=0.1):
         """Apply one step of gradient descent on the loss function `loss`, with 
         step-size `step_size`, and returns the updated parameters of the neural 
         network.
         """
-        params = OrderedDict(self.policy.named_parameters())
+        # params = OrderedDict(self.policy.named_parameters())
 
         grads = torch.autograd.grad(loss, params.values(),
                                     create_graph=False)
@@ -102,7 +101,8 @@ class A2C(nn.Module):
         for (name, param), grad in zip(params.items(), grads):
             params[name] = param - step_size * grad
 
-        self.policy.load_state_dict(params)
+        # self.policy.load_state_dict(params)
+        return params
 
     def __step(self, env, horizon):
         '''
@@ -165,7 +165,7 @@ class A2C(nn.Module):
 
     In our evaluation, we compare adaptation to a new task with up to 4 gradient updates, each with 40 samples.
     '''
-    def train(self, env, num_batches = 1, batch_size = 20, horizon = 100):
+    def train(self, env, num_batches = 1, batch_size = 20, horizon = 100, batch_envs=None):
         '''
         Train using batch_size samples of complete trajectories, num_batches times (so num_batches gradient updates)
         
@@ -178,7 +178,10 @@ class A2C(nn.Module):
 
         for batch in tqdm(range(num_batches)):
 
-            parallel_envs = [env.generate_fresh() for _ in range(batch_size)]
+            if batch_envs == None:
+                parallel_envs = [env.generate_fresh() for _ in range(batch_size)]
+            else:
+                assert len(batch_envs) == batch_size, "supplied envs must match "
 
             batch_states = []
             batch_actions = []
@@ -240,7 +243,14 @@ class A2C(nn.Module):
                 self.opt_c.step()
             else:
                 # call update params manually, without fancy adaptive stuff
-                self.update_params(batch_actor_loss, step_size = self.lr)
+                params = OrderedDict(self.policy.named_parameters())
+                self.update_params(params, batch_actor_loss, step_size = self.lr)
+                self.policy.load_state_dict(params)
+
+                params = OrderedDict(self.critic.named_parameters())
+                self.update_params(params, batch_critic_loss, step_size = self.lr)
+                self.critic.load_state_dict(params)
+            
 
             if self.ppo:
                 # update old policy to the previous new policy

@@ -7,7 +7,7 @@ import numpy as np
 
 class MazeSimulator:
 
-    def __init__(self, goal_X, goal_Y, reward_type, state_rep, wall_penalty=0, normalize_state=True):
+    def __init__(self, goal_X, goal_Y, reward_type, state_rep, maze = None, wall_penalty=0, normalize_state=True):
         
         self.maze = []
 
@@ -44,47 +44,25 @@ class MazeSimulator:
         elif self.state_rep == "xy":
             self.state_size = 2
         
-        # self.state_size = 2
-
-        # generates an empty maze, W stands for a wall square
-        # top_bottom = ['W'] * self.num_col
-        # middle = ['W'] + [' '] * (self.num_col - 2) + ['W']
-        # self.maze.append(copy(top_bottom))
-        # for _ in range(self.num_row - 2):
-        #     self.maze.append(copy(middle))
-        # self.maze.append(copy(top_bottom))
-        # self.maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
-        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-        #              ["W", "W", "W", "W", "W", "W", " ", " ", "W"],
-        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-        #              ["W", " ", "W", "W", "W", "W", "W", "W", "W"],
-        #              ["W", " ", "W", " ", " ", " ", "W", " ", "W"],
-        #              ["W", " ", "W", " ", "W", " ", "W", " ", "W"],
-        #              ["W", " ", "W", " ", "W", " ", "W", " ", "W"],
-        #              ["W", " ", " ", " ", "W", " ", "W", " ", "W"],
-        #              ["W", "W", "W", "W", "W", " ", " ", " ", "W"],
-        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-        #              ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-        #              ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
-        self.maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
-                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-                ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-                ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-                ["W", " ", " ", " ", "W", " ", "W", "W", "W"],
-                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-                ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-                ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-                ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-                ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
+        if maze == None:
+            self.maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+                        ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
+        else:
+            self.maze = maze
 
         self.goal_x = goal_X
         self.goal_y = goal_Y
@@ -96,6 +74,9 @@ class MazeSimulator:
         # print(self.maze_info)
         for x in range(1, self.num_col-1):
             for y in range(1, self.num_row-1):
+                '''
+                We don't actually do anything with this wall information yet
+                '''
                 # check if a wall is in each direction
                 walls = [0, 0, 0, 0]
                 if self.maze[y + 1][x] == "W":
@@ -107,36 +88,6 @@ class MazeSimulator:
                 if self.maze[y][x - 1] == "W":
                     walls[3] = 1
                 
-                # find goal direction
-                # currently encode left, right as -1, 1, and down, up as -1, 1
-                # goal_dir_encoding = [0, 0]
-                # if x < self.goal_x:
-                #     goal_dir_encoding[0] = 1
-                # elif x > self.goal_x:
-                #     goal_dir_encoding[0] = -1
-                
-                # if y < self.goal_y:
-                #     goal_dir_encoding[1] = 1
-                # elif y > self.goal_y:
-                #     goal_dir_encoding[1] = -1
-
-                # # get distance to nearest wall in each direction [N, S, E, W]
-                # wall_dist = [0, 0, 0, 0]
-                # x_temp, y_temp = x, y
-                # while self.maze[y_temp][x] != 'W': # N
-                #     wall_dist[0] += 1
-                #     y_temp -= 1
-                # y_temp = y
-                # while self.maze[y_temp][x] != 'W': # S
-                #     wall_dist[1] += 1
-                #     y_temp += 1
-                # while self.maze[y][x_temp] != 'W': # E
-                #     wall_dist[2] += 1
-                #     x_temp += 1
-                # x_temp = x
-                # while self.maze[y][x_temp] != 'W': # W
-                #     wall_dist[3] += 1
-                #     x_temp -= 1
                 self.maze_info[y][x] = self.state_rep_func(x, y)
 
     def __get_action(self, policy_output):
@@ -144,7 +95,7 @@ class MazeSimulator:
 
     def generate_fresh(self):
         # self.reset_soft()
-        return MazeSimulator(self.goal_x, self.goal_y, self.reward, self.state_rep, self.wall_penalty)
+        return MazeSimulator(self.goal_x, self.goal_y, self.reward, self.state_rep, self.maze, self.wall_penalty, self.normalize_state)
 
     def reset_soft(self):
         '''
