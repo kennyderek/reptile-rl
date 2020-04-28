@@ -165,10 +165,10 @@ if __name__ == "__main__":
     if not use_optimizer:
         # this route is faster and cooler b/c we have more control
         model = A2C(world.state_size, world.num_actions, seed=1, lr=0.1, use_opt=False, ppo=False)
-        rewards = model.train(world, num_batches=1000, batch_size=1, horizon=100, envs_per_batch = envs)
+        rewards = model.train(world, num_batches=1000, batch_size=1, horizon=100, envs_per_batch=envs)
     else:
         model = A2C(world.state_size, world.num_actions, seed=1, lr=1e-5, use_opt=True, ppo=True)
-        rewards = model.train(world, num_batches=1000, batch_size=1, horizon=100, envs_per_batch = envs)
+        rewards = model.train(world, num_batches=1000, batch_size=1, horizon=100, envs_per_batch=envs)
 
     world.visualize(model.policy)
     world.visualize_value(model.critic)
