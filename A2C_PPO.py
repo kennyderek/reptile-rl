@@ -22,7 +22,7 @@ from collections import OrderedDict
 
 class A2C(nn.Module):
 
-    def __init__(self, state_input_size, action_space_size, seed, lr, use_opt=False, ppo=False):
+    def __init__(self, state_input_size, action_space_size, seed, lr, lr_critic, use_opt=False, ppo=False):
         super(A2C, self).__init__()
 
         torch.manual_seed(seed)
@@ -35,6 +35,7 @@ class A2C(nn.Module):
         self.policy = Actor(state_input_size, action_space_size)
 
         self.lr = lr
+        self.lr_critic = lr_critic
 
         self.ppo = ppo
 
@@ -44,12 +45,15 @@ class A2C(nn.Module):
         else:
             for param in self.policy.parameters():
                 param.requires_grad = True
+            # for param in self.critic.parameters():
+            #     param.requires_grad = True
+            self.opt_c = optim.Adam(self.critic.parameters(), lr=self.lr_critic)
 
         self.old_policy = Actor(state_input_size, action_space_size)
 
     def init_optimizers(self):
         self.opt_a = optim.Adam(self.policy.parameters(), lr=self.lr)
-        self.opt_c = optim.Adam(self.critic.parameters(), lr=self.lr)
+        self.opt_c = optim.Adam(self.critic.parameters(), lr=self.lr_critic)
 
     def compute_loss(self, state, action, weights):
         '''
@@ -67,14 +71,16 @@ class A2C(nn.Module):
         else:
             ratios =  Categorical(self.policy(state)).log_prob(action)
             # entropy =  Categorical(self.policy(state)).log_prob(action)
-            adv = ratios * weights
-            return -(adv.mean()), None
+            loss = ratios * weights
+            # print("policy loss:", loss.mean())
+            return -(loss.mean()), None
 
     def compute_critic_loss(self, state, weights):
         '''
         weights is what to multiply the log probability by
         '''
-        loss = self.critic(state)*weights
+        loss = -self.critic(state)*weights
+        # print("critic loss:", loss.mean())
         return loss.mean()
     
     def normalize_advantages(self, advantages):
@@ -89,7 +95,8 @@ class A2C(nn.Module):
         return advantages
 
     def update_params(self, params, loss, step_size=0.1):
-        """Apply one step of gradient descent on the loss function `loss`, with 
+        """
+        Apply one step of gradient descent on the loss function `loss`, with 
         step-size `step_size`, and returns the updated parameters of the neural 
         network.
         """
@@ -115,6 +122,7 @@ class A2C(nn.Module):
             S, A, R = generate_episode(self.old_policy, env, horizon)
         else:
             S, A, R = generate_episode(self.policy, env, horizon)
+        Rn = self.normalize_advantages(R)
 
         traj_len = len(A)
 
@@ -126,7 +134,8 @@ class A2C(nn.Module):
         #     reward_tplusone = discounted_rewards[t]
 
         # compute advantage (of that action)
-        advantages = [0]*traj_len
+        td_err = [0]*traj_len
+        adv = [0]*traj_len
         for t in range(traj_len):
             '''
             The commented out method may/may not be better, all it does is help propagate reward
@@ -138,21 +147,25 @@ class A2C(nn.Module):
             # else:
             #     advantages[t] = sum([R[t+i]*lam**(i) for i in range(k)]) + lam**k*self.critic(S[t+k]) - self.critic(S[t])
             if S[t+1] == None:
-                advantages[t] = R[t] - lam*self.critic(S[t])
+                td_err[t] = Rn[t] - self.critic(S[t]).item()
+                adv[t] = Rn[t] - self.critic(S[t]).item()
             else:
-                advantages[t] = R[t] - lam*self.critic(S[t]) + self.critic(S[t+1])
+                td_err[t] = Rn[t] + (lam*self.critic(S[t+1]) - self.critic(S[t])).item()
+                adv[t] = Rn[t] - self.critic(S[t]).item()
         
         mini_batch_states = []
         mini_batch_actions = []
-        mini_batch_weights = []
+        mini_batch_td = []
+        mini_batch_adv = []
         mini_batch_rewards = []
         for t in range(traj_len):
             mini_batch_states.append(S[t].data.numpy())
             mini_batch_actions.append(A[t])
-            mini_batch_weights.append(advantages[t].item())
+            mini_batch_td.append(td_err[t])
+            mini_batch_adv.append(adv[t])
             mini_batch_rewards.append(R[t])
 
-        return env, mini_batch_states, mini_batch_actions, mini_batch_weights, mini_batch_rewards
+        return env, mini_batch_states, mini_batch_actions, mini_batch_td, mini_batch_adv, mini_batch_rewards
 
     '''
     For 2D Maze nav task:
@@ -185,13 +198,14 @@ class A2C(nn.Module):
 
             batch_states = []
             batch_actions = []
-            batch_weights = []
+            batch_td = []
+            batch_adv = []
             batch_rewards = []
 
             q = mp.Queue()
             def multi_process(self, env, horizon, q, done):
-                env, s, a, w, r = self.__step(env, horizon)
-                q.put((s, a, w, r))
+                env, s, a, td, adv, r = self.__step(env, horizon)
+                q.put((s, a, td, adv, r))
                 done.wait()
 
             done = mp.Event()
@@ -206,27 +220,28 @@ class A2C(nn.Module):
                 processes.append(p)
 
             for i in range(num_processes):
-                (s, a, w, r) = q.get()
+                (s, a, td, adv, r) = q.get()
                 batch_states.extend(s)
                 batch_actions.extend(a)
-                batch_weights.extend(w)
+                batch_td.extend(td)
+                batch_adv.extend(adv)
                 batch_rewards.extend(r)
             
             done.set()
             for p in processes:
                 p.join()
             
-            batch_weights = self.normalize_advantages(batch_weights)
+            # batch_td = self.normalize_advantages(batch_td)
             cumulative_rewards.append(sum(batch_rewards)/batch_size)
 
             batch_actor_loss, batch_entropy_loss = self.compute_loss(
                                     state=torch.as_tensor(batch_states, dtype=torch.float32),
                                     action=torch.as_tensor(batch_actions, dtype=torch.float32),
-                                    weights=torch.as_tensor(batch_weights, dtype=torch.float32))
+                                    weights=torch.as_tensor(batch_adv, dtype=torch.float32))
             
             batch_critic_loss = self.compute_critic_loss(
                                     state=torch.as_tensor(batch_states, dtype=torch.float32),
-                                    weights=torch.as_tensor(batch_weights, dtype=torch.float32))
+                                    weights=torch.as_tensor(batch_td, dtype=torch.float32))
 
             if self.ppo:
                 # we make a copy of the current policy to use as the "old" policy in the next iteration
@@ -247,10 +262,12 @@ class A2C(nn.Module):
                 self.update_params(params, batch_actor_loss, step_size = self.lr)
                 self.policy.load_state_dict(params)
 
-                params = OrderedDict(self.critic.named_parameters())
-                self.update_params(params, batch_critic_loss, step_size = self.lr)
-                self.critic.load_state_dict(params)
-            
+                # params = OrderedDict(self.critic.named_parameters())
+                # self.update_params(params, batch_critic_loss, step_size = self.lr_critic)
+                # self.critic.load_state_dict(params)
+                self.opt_c.zero_grad()
+                batch_critic_loss.backward()
+                self.opt_c.step()
 
             if self.ppo:
                 # update old policy to the previous new policy
