@@ -1,0 +1,18 @@
+Where do we normalize stuff? Is it the rewards, or after advantages are computed?
+
+
+Which parameters do we set requires_grad to True? The whole thing?
+
+
+How do I do the TD error and advantages/update for actor+critic correctly?
+
+
+Optimizer versus non-optimizer? Using optimizers seem to make the results more unstable. But non-optimizer makes the value function useless/doesn't update it very well?
+
+
+A2C original paper uses 1 network for both value and critic?
+
+
+
+
+This branch just doesn't seem to be as good as the ppo branch.
