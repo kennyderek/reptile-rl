@@ -22,7 +22,7 @@ from collections import OrderedDict
 
 class REINFORCE(nn.Module):
 
-    def __init__(self, state_input_size, action_space_size, seed, lr, lr_critic, use_opt=False, ppo=False):
+    def __init__(self, state_input_size, action_space_size, seed, lr, num_inner_loops, use_opt=False, ppo=False, ppo_epsilon=0.02):
         super(REINFORCE, self).__init__()
 
         torch.manual_seed(seed)
@@ -30,14 +30,16 @@ class REINFORCE(nn.Module):
         self.state_input_size = state_input_size
         self.action_space_size = action_space_size
 
-        self.critic = Critic(state_input_size, 1)
+        # self.critic = Critic(state_input_size, 1)
 
         self.policy = Actor(state_input_size, action_space_size)
 
         self.lr = lr
-        self.lr_critic = lr_critic
 
         self.ppo = ppo
+        self.ppo_epsilon = ppo_epsilon
+
+        self.num_inner_loops = num_inner_loops
 
         self.use_opt = use_opt
         if use_opt:
@@ -45,15 +47,13 @@ class REINFORCE(nn.Module):
         else:
             for param in self.policy.parameters():
                 param.requires_grad = True
-            # for param in self.critic.parameters():
-            #     param.requires_grad = True
-            self.opt_c = optim.Adam(self.critic.parameters(), lr=self.lr_critic)
+            # self.opt_c = optim.Adam(self.critic.parameters(), lr=self.lr_critic)
 
         self.old_policy = Actor(state_input_size, action_space_size)
 
     def init_optimizers(self):
         self.opt_a = optim.Adam(self.policy.parameters(), lr=self.lr)
-        self.opt_c = optim.Adam(self.critic.parameters(), lr=self.lr_critic)
+        # self.opt_c = optim.Adam(self.critic.parameters(), lr=self.lr_critic)
 
     def compute_loss(self, state, action, weights):
         '''
@@ -62,7 +62,7 @@ class REINFORCE(nn.Module):
         if self.ppo:
             logp_ratios =  Categorical(self.policy(state)).log_prob(action) - Categorical(self.old_policy(state)).log_prob(action)
             ratios = torch.exp(logp_ratios)
-            clipped_adv = torch.clamp(ratios, 1 - 0.02, 1 + 0.02) * weights
+            clipped_adv = torch.clamp(ratios, 1 - self.ppo_epsilon, 1 + self.ppo_epsilon) * weights
             non_clipped_adv = ratios * weights
             # theoretically, big = good too keep this from converging too quickly,
             # so we encourage by adding to the thing we are trying to maximize
@@ -73,7 +73,7 @@ class REINFORCE(nn.Module):
             entropy =  Categorical(self.policy(state)).entropy()
             loss = ratios * weights
             # print("policy loss:", loss.mean())
-            return -(loss.sum()), entropy.sum()
+            return -(loss.mean()), entropy.mean()
 
     def compute_critic_loss(self, state, value):
         '''
@@ -81,7 +81,7 @@ class REINFORCE(nn.Module):
         '''
         loss = F.smooth_l1_loss(self.policy.value(state), value)
         # print("critic loss:", loss.mean())
-        return loss.sum()
+        return loss.mean()
     
     def normalize_advantages(self, advantages):
         '''
@@ -91,7 +91,7 @@ class REINFORCE(nn.Module):
         std = np.std(advantages)
         mean = advantages.mean()
         if std != 0:
-            advantages = (advantages - mean) / std  
+            advantages = (advantages - mean) / (std)  
         return advantages
 
     def update_params(self, params, loss, step_size=0.1):
@@ -100,15 +100,10 @@ class REINFORCE(nn.Module):
         step-size `step_size`, and returns the updated parameters of the neural 
         network.
         """
-        # params = OrderedDict(self.policy.named_parameters())
-
         grads = torch.autograd.grad(loss, params.values(),
                                     create_graph=False)
-
         for (name, param), grad in zip(params.items(), grads):
             params[name] = param - step_size * grad
-
-        # self.policy.load_state_dict(params)
         return params
 
     def __step(self, env, horizon):
@@ -123,6 +118,7 @@ class REINFORCE(nn.Module):
         else:
             S, A, R = generate_episode(self.policy, env, horizon)
         Rn = self.normalize_advantages(R)
+        # Rn = R
 
         traj_len = len(A)
 
@@ -236,7 +232,7 @@ class REINFORCE(nn.Module):
 
             # print(batch_actor_loss, batch_critic_loss, batch_entropy_loss)
             loss = batch_actor_loss + batch_critic_loss
-            losses.append(loss.item())
+            losses.append((batch_actor_loss.item(), batch_critic_loss.item()))
 
             if self.ppo:
                 # we make a copy of the current policy to use as the "old" policy in the next iteration
@@ -244,9 +240,10 @@ class REINFORCE(nn.Module):
 
             # update new policy
             if self.use_opt:
-                for i in range(0, 5):
+                for i in range(0, self.num_inner_loops):
                     self.opt_a.zero_grad()
                     loss.backward(retain_graph=True)
+                    torch.nn.utils.clip_grad_norm_(self.parameters(), 0.5)
                     self.opt_a.step()
                     # batch_actor_loss, batch_entropy_loss = self.compute_loss(
                     #                         state=torch.as_tensor(batch_states, dtype=torch.float32),
@@ -272,9 +269,9 @@ class REINFORCE(nn.Module):
                 # params = OrderedDict(self.critic.named_parameters())
                 # self.update_params(params, batch_critic_loss, step_size = self.lr_critic)
                 # self.critic.load_state_dict(params)
-                self.opt_c.zero_grad()
-                batch_critic_loss.backward()
-                self.opt_c.step()
+                # self.opt_c.zero_grad()
+                # batch_critic_loss.backward()
+                # self.opt_c.step()
 
             if self.ppo:
                 # update old policy to the previous new policy
