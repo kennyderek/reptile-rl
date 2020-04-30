@@ -1,5 +1,6 @@
 
 from A2C_PPO import A2C
+from reinforce import REINFORCE
 from sim import MazeSimulator
 import matplotlib.pyplot as plt
 
@@ -15,12 +16,12 @@ if __name__ == "__main__":
     '''
 
     maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
             ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
             ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
             ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
@@ -30,49 +31,42 @@ if __name__ == "__main__":
             ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
             ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
             ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
-
-    maze_nonmisleading = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
-            ["W", "A", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", "W", " ", "W", "W", "W"],
-            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
-
     
-    world = MazeSimulator(goal_X=3, goal_Y=6,
+    world = MazeSimulator(goal_X=6, goal_Y=1,
                     reward_type="distance",
                     state_rep="xy",
                     maze=maze,
-                    wall_penalty=0,
+                    wall_penalty=-10,
                     normalize_state=True)
 
     print(world)
 
-    use_optimizer = False
+    use_optimizer = True
     if not use_optimizer:
         # this route is faster and cooler b/c we have more control
-        model = A2C(world.state_size, world.num_actions, seed=1, lr=0.5, lr_critic=3e-4, use_opt=False, ppo=True)
-        rewards = model.train(world, num_batches=200, batch_size=1, horizon=100)
+        model = REINFORCE(world.state_size, world.num_actions, seed=1, lr=0.5, lr_critic=3e-4, use_opt=False, ppo=True)
+        rewards, losses = model.train(world, num_batches=200, batch_size=1, horizon=1000)
     else:
-        model = A2C(world.state_size, world.num_actions, seed=1, lr=1e-5, lr_critic=1e-5, use_opt=True, ppo=True)
-        rewards = model.train(world, num_batches=400, batch_size=1, horizon=100)
+        model = REINFORCE(world.state_size, world.num_actions, seed=1, lr=1e-4, lr_critic=1e-5, use_opt=True, ppo=True)
+        rewards, losses = model.train(world, num_batches=200, batch_size=5, horizon=100)
 
     world.visualize(model.policy)
-    world.visualize_value(model.critic)
+    world.visualize_value(model.policy.value)
+
+    plt.plot(list(range(len(losses))), losses)
+    plt.savefig("Losses")
+    plt.clf()
 
     plt.plot(list(range(len(rewards))), rewards)
     plt.savefig("Rewards")
 
+    f = open("goal_locations.log", "r+")
+    goal_found_at = []
+    for x in f:
+        goal_found_at.append(int(x[10:]))
+    f.truncate(0)
+    plt.plot(list(range(len(goal_found_at))), goal_found_at)
+    plt.savefig("GoalIndex.png")
 
 
     '''
