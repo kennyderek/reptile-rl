@@ -18,11 +18,11 @@ from utils import *
 import torch.multiprocessing as mp
 import copy
 from collections import OrderedDict
-
+import math
 
 class REINFORCE(nn.Module):
 
-    def __init__(self, state_input_size, action_space_size, seed, lr, num_inner_loops, use_opt=False, ppo=False, ppo_epsilon=0.02):
+    def __init__(self, state_input_size, action_space_size, seed, lr, num_inner_loops, use_opt=False, ppo=False, ppo_epsilon=0.2):
         super(REINFORCE, self).__init__()
 
         torch.manual_seed(seed)
@@ -55,19 +55,19 @@ class REINFORCE(nn.Module):
         self.opt_a = optim.Adam(self.policy.parameters(), lr=self.lr)
         # self.opt_c = optim.Adam(self.critic.parameters(), lr=self.lr_critic)
 
-    def compute_loss(self, state, action, weights):
+    def compute_loss(self, state, action, weights, ppo_epsilon):
         '''
         weights is what to multiply the log probability by
         '''
         if self.ppo:
             logp_ratios =  Categorical(self.policy(state)).log_prob(action) - Categorical(self.old_policy(state)).log_prob(action)
             ratios = torch.exp(logp_ratios)
-            clipped_adv = torch.clamp(ratios, 1 - self.ppo_epsilon, 1 + self.ppo_epsilon) * weights
+            clipped_adv = torch.clamp(ratios, 1 - ppo_epsilon, 1 + ppo_epsilon) * weights
             non_clipped_adv = ratios * weights
             # theoretically, big = good too keep this from converging too quickly,
             # so we encourage by adding to the thing we are trying to maximize
             # entropy_loss = Categorical(self.policy(state)).entropy()
-            return -(torch.min(clipped_adv, non_clipped_adv)).sum(), Categorical(self.policy(state)).entropy().sum()
+            return -(torch.min(clipped_adv, non_clipped_adv)).sum(), -Categorical(self.policy(state)).entropy().sum()
         else:
             ratios =  Categorical(self.policy(state)).log_prob(action)
             entropy =  Categorical(self.policy(state)).entropy()
@@ -81,7 +81,7 @@ class REINFORCE(nn.Module):
         '''
         loss = F.smooth_l1_loss(self.policy.value(state), value)
         # print("critic loss:", loss.mean())
-        return loss.mean()
+        return loss.sum()
     
     def normalize_advantages(self, advantages):
         '''
@@ -117,8 +117,8 @@ class REINFORCE(nn.Module):
             S, A, R = generate_episode(self.old_policy, env, horizon)
         else:
             S, A, R = generate_episode(self.policy, env, horizon)
-        Rn = self.normalize_advantages(R)
-        # Rn = R
+        # Rn = self.normalize_advantages(R)
+        Rn = R
 
         traj_len = len(A)
 
@@ -218,60 +218,102 @@ class REINFORCE(nn.Module):
             for p in processes:
                 p.join()
             
+            batch_adv = self.normalize_advantages(batch_adv)
             # batch_td = self.normalize_advantages(batch_td)
             cumulative_rewards.append(sum(batch_rewards)/batch_size)
 
-            batch_actor_loss, batch_entropy_loss = self.compute_loss(
-                                    state=torch.as_tensor(batch_states, dtype=torch.float32),
-                                    action=torch.as_tensor(batch_actions, dtype=torch.float32),
-                                    weights=torch.as_tensor(batch_adv, dtype=torch.float32))
+            # batch_actor_loss, batch_entropy_loss = self.compute_loss(
+            #                         state=torch.as_tensor(batch_states, dtype=torch.float32),
+            #                         action=torch.as_tensor(batch_actions, dtype=torch.float32),
+            #                         weights=torch.as_tensor(batch_adv, dtype=torch.float32))
             
-            batch_critic_loss = self.compute_critic_loss(
-                                    state=torch.as_tensor(batch_states, dtype=torch.float32),
-                                    value=torch.as_tensor(batch_td, dtype=torch.float32).unsqueeze(1))
+            # batch_critic_loss = self.compute_critic_loss(
+            #                         state=torch.as_tensor(batch_states, dtype=torch.float32),
+            #                         value=torch.as_tensor(batch_td, dtype=torch.float32).unsqueeze(1))
+            # batch_actor_loss = (batch + 10)/(num_batches + 10) * batch_actor_loss / batch_size
+            # batch_entropy_loss = (1 - (batch + 10)/(num_batches + 10))*batch_entropy_loss / batch_size
+            # batch_actor_loss = 1/5 * batch_actor_loss / batch_size
+            # batch_entropy_loss = 4/5*batch_entropy_loss / batch_size
+            # batch_critic_loss = batch_critic_loss / batch_size
 
             # print(batch_actor_loss, batch_critic_loss, batch_entropy_loss)
-            loss = batch_actor_loss + batch_critic_loss
-            losses.append((batch_actor_loss.item(), batch_critic_loss.item()))
+            # loss = batch_actor_loss + batch_critic_loss + batch_entropy_loss
+            # losses.append((batch_actor_loss.item(), batch_critic_loss.item(), batch_entropy_loss.item()))
 
             if self.ppo:
                 # we make a copy of the current policy to use as the "old" policy in the next iteration
                 temp_state_dict = copy.deepcopy(self.policy.state_dict())
 
-            # update new policy
-            if self.use_opt:
-                for i in range(0, self.num_inner_loops):
-                    self.opt_a.zero_grad()
-                    loss.backward(retain_graph=True)
-                    torch.nn.utils.clip_grad_norm_(self.parameters(), 0.5)
-                    self.opt_a.step()
-                    # batch_actor_loss, batch_entropy_loss = self.compute_loss(
-                    #                         state=torch.as_tensor(batch_states, dtype=torch.float32),
-                    #                         action=torch.as_tensor(batch_actions, dtype=torch.float32),
-                    #                         weights=torch.as_tensor(batch_adv, dtype=torch.float32))
-                    
-                    # batch_critic_loss = self.compute_critic_loss(
-                    #                         state=torch.as_tensor(batch_states, dtype=torch.float32),
-                    #                         value=torch.as_tensor(batch_td, dtype=torch.float32).unsqueeze(1))
-                    # loss = batch_actor_loss + batch_critic_loss
-                # self.opt_a.zero_grad()
-                # loss.backward()
-                # self.opt_a.step()
-                # self.opt_c.zero_grad()
-                # batch_critic_loss.backward()
-                # self.opt_c.step()
-            else:
-                # call update params manually, without fancy adaptive stuff
-                params = OrderedDict(self.policy.named_parameters())
-                self.update_params(params, batch_actor_loss, step_size = self.lr)
-                self.policy.load_state_dict(params)
+            slices = torch.randperm(len(batch_states))
 
-                # params = OrderedDict(self.critic.named_parameters())
-                # self.update_params(params, batch_critic_loss, step_size = self.lr_critic)
-                # self.critic.load_state_dict(params)
-                # self.opt_c.zero_grad()
-                # batch_critic_loss.backward()
-                # self.opt_c.step()
+            def calc_eps_decay():
+                return self.ppo_epsilon + (1 - batch/batch_size)**2*1.8
+
+            # lets do minibatches
+            num_mini_batches = 4
+            slice_len = len(batch_states) // num_mini_batches
+            for m in range(0, num_mini_batches):
+                indices = slices[m*slice_len:(m+1)*slice_len]
+                
+                batch_actor_loss, batch_entropy_loss = self.compute_loss(
+                                        state=torch.as_tensor(batch_states, dtype=torch.float32)[indices],
+                                        action=torch.as_tensor(batch_actions, dtype=torch.float32)[indices],
+                                        weights=torch.as_tensor(batch_adv, dtype=torch.float32)[indices],
+                                        ppo_epsilon=calc_eps_decay())
+                
+                batch_critic_loss = self.compute_critic_loss(
+                                        state=torch.as_tensor(batch_states, dtype=torch.float32)[indices],
+                                        value=torch.as_tensor(batch_td, dtype=torch.float32).unsqueeze(1)[indices])
+                
+                batch_actor_loss = batch_actor_loss
+                batch_entropy_loss = (0.1+(1 - batch/num_batches)**2)*batch_entropy_loss
+                batch_critic_loss = batch_critic_loss
+
+                # print(batch_actor_loss, batch_critic_loss, batch_entropy_loss)
+                loss = batch_actor_loss + batch_critic_loss + batch_entropy_loss
+                losses.append((batch_actor_loss.item(), batch_critic_loss.item(), batch_entropy_loss.item()))
+                self.opt_a.zero_grad()
+                if m != num_mini_batches - 1:
+                    loss.backward(retain_graph=True)
+                else:
+                    loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.parameters(), 0.5)
+                self.opt_a.step()
+            
+            # # update new policy
+            # if self.use_opt:
+            #     for i in range(0, self.num_inner_loops):
+            #         self.opt_a.zero_grad()
+            #         loss.backward(retain_graph=True)
+            #         torch.nn.utils.clip_grad_norm_(self.parameters(), 0.5)
+            #         self.opt_a.step()
+            #         # batch_actor_loss, batch_entropy_loss = self.compute_loss(
+            #         #                         state=torch.as_tensor(batch_states, dtype=torch.float32),
+            #         #                         action=torch.as_tensor(batch_actions, dtype=torch.float32),
+            #         #                         weights=torch.as_tensor(batch_adv, dtype=torch.float32))
+                    
+            #         # batch_critic_loss = self.compute_critic_loss(
+            #         #                         state=torch.as_tensor(batch_states, dtype=torch.float32),
+            #         #                         value=torch.as_tensor(batch_td, dtype=torch.float32).unsqueeze(1))
+            #         # loss = batch_actor_loss + batch_critic_loss
+            #     # self.opt_a.zero_grad()
+            #     # loss.backward()
+            #     # self.opt_a.step()
+            #     # self.opt_c.zero_grad()
+            #     # batch_critic_loss.backward()
+            #     # self.opt_c.step()
+            # else:
+            #     # call update params manually, without fancy adaptive stuff
+            #     params = OrderedDict(self.policy.named_parameters())
+            #     self.update_params(params, batch_actor_loss, step_size = self.lr)
+            #     self.policy.load_state_dict(params)
+
+            #     # params = OrderedDict(self.critic.named_parameters())
+            #     # self.update_params(params, batch_critic_loss, step_size = self.lr_critic)
+            #     # self.critic.load_state_dict(params)
+            #     # self.opt_c.zero_grad()
+            #     # batch_critic_loss.backward()
+            #     # self.opt_c.step()
 
             if self.ppo:
                 # update old policy to the previous new policy

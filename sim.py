@@ -40,7 +40,7 @@ class MazeSimulator:
         if self.state_rep == "fullboard":
             self.state_size = self.num_row * self.num_col
         elif self.state_rep == "onehot":
-            self.state_size = self.num_row * self.num_col
+            self.state_size = self.num_row + self.num_col
         elif self.state_rep == "xy":
             self.state_size = 2
         
