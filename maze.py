@@ -1,6 +1,7 @@
 #code adapted from https://scipython.com/blog/making-a-maze/
 
 import random
+from random import randint
 
 '''
 TODO: -hardcode connected walls for some cases
@@ -35,21 +36,27 @@ class Cell:
 
 
 
-class Maze:
+class Prelim_Maze:
 	'''Represents a maze as a grid of cells'''
 
-	def __init__(self, num_rows, num_cols, num_walls, start_row, start_col):
+	def __init__(self, num_rows, num_cols, num_walls, start = None, goal = None):
 		self.num_rows = num_rows
 		self.num_cols = num_cols
-		self.start_row = start_row
-		self.start_col = start_col
+
 		self.num_walls = num_walls
 		self.num_interior_walls = 2*(self.num_rows)*(self.num_rows+1)-(self.num_rows*2 + self.num_cols*2)
-		self.goal = None
+		self.goal = goal
 
-		self.maze = [[Cell(row, col) for col in range(num_cols)] for row in range(num_rows)]
+		self.maze = [[Cell(row, col) for col in range(num_cols)] for row in range(num_rows)] #maze of Cells
 
-		self.final_maze = None
+		if start is None:
+			start_row = randint(0, num_rows-1)
+			start_col = randint(0, num_cols-1)
+			self.start = self.get_cell(start_row, start_col)
+		else:
+			self.start = self.get_cell(start[0], start[1])
+
+		self.final_maze = None  #maze of Maze_Cells (every elements is different)
 
 	def make_maze(self):
 		'''Creates maze that is solvable'''
@@ -57,7 +64,7 @@ class Maze:
 		total_cells = self.num_rows * self.num_cols
 
 		stack = []
-		current_cell = self.get_cell(self.start_row, self.start_col)
+		current_cell = self.get_cell(self.start.row, self.start.col)
 
 		current_cell_number = 1
 
@@ -132,11 +139,13 @@ class Maze:
 		return neighbors
 
 
-
-
 	def get_cell(self, row, col):
 		'''Returns Cell object at (row, col)'''
 		return self.maze[row][col]
+
+	def get_maze_cell(self, row, col):
+		'''Returns Maze Cell object at (row, col)'''
+		return self.final_maze[2*row+1][2*col+1]
 
 	def get_neighbors(self, cell):
 		'''Return list of unvisited neighbors to cell (that are completely locked)'''
@@ -171,7 +180,7 @@ class Maze:
 
 	def is_start(self, cell):
 		'''Returns whether cell is starting position'''
-		return (cell.row == self.start_row and cell.col == self.start_col)
+		return (cell.row == self.start.row and cell.col == self.start.col)
 
 	def is_goal(self, cell):
 		'''Returns whether cell is goal position'''
@@ -179,14 +188,15 @@ class Maze:
 
 
 	def generate_maze(self):
-		'''Generates overall maze of maze_cells with specified number of walls and random goal position'''
+		'''Generates overall maze of Maze_Cells with specified number of walls and random goal position'''
 		self.make_maze_with_num_walls()
-		self.set_goal()
+		if self.goal is None:
+			self.set_goal()
 		self.generate_maze_of_maze_cells()
 
 
 	def print_preliminary_maze(self):
-		'''Returns string representation of preliminary maze'''
+		'''Returns string representation of preliminary maze before converting to Maze Cells'''
 		maze = ' '
 		for i in range(self.num_cols):
 			maze += '__ '
@@ -230,7 +240,7 @@ class Maze:
 		return maze
 
 	def generate_maze_of_maze_cells(self):
-
+		'''Converts maze of Cells to maze of Maze Cells'''
 
 		num_rows = self.num_rows*2 + 1
 		num_cols = self.num_cols*2 + 1
@@ -247,7 +257,7 @@ class Maze:
 				new_row = 2*row + 1
 				new_col = 2*col + 1
 
-				if row == self.start_row and col == self.start_col:
+				if row == self.start.row and col == self.start.col:
 					new_maze[new_row][new_col].set_start()
 				elif row == self.goal.row and col == self.goal.col:
 					new_maze[new_row][new_col].set_goal()
@@ -282,7 +292,7 @@ class Maze:
 			self.final_maze = new_maze
 
 	def __str__(self):
-
+		'''Returns string representation of maze'''
 		num_rows = 2*self.num_rows+1
 		num_cols = 2*self.num_cols+1
 
@@ -314,44 +324,95 @@ class Maze_Cell:
 	def __init__(self, row, col):
 		self.row = row
 		self.col = col
-		self.is_wall = False
-		self.is_start = False
-		self.is_goal = False
+		self.wall_status = False
+		self.start_status = False
+		self.goal_status = False
 
 	def is_wall(self):
-		return self.is_wall
+		return self.wall_status
 
 	def is_start(self):
-		return self.is_start
+		return self.start_status
 
 	def is_goal(self):
-		return self.is_goal
+		return self.goal_status
 
 	def set_goal(self):
-		self.is_goal = True
+		self.goal_status = True
 
 	def set_wall(self):
-		self.is_wall = True
+		self.wall_status = True
 
 	def set_start(self):
-		self.is_start = True
+		self.start_status = True
 
 
 	def __str__(self):
-		if self.is_goal:
+		if self.is_goal():
 			return "G"
-		if self.is_wall:
+		if self.is_wall():
 			return "W"
 		return " "
 
+class Maze:
+	'''Represents a maze as a grid of cells, treating each object as separate cell'''
+
+	def __init__(self, num_rows, num_cols, num_walls, start = None, goal = None):
+		prelim_maze = Prelim_Maze(num_rows, num_cols, num_walls, start, goal = None)
+
+		prelim_maze.generate_maze()
+
+		self.num_rows = 2*num_rows + 1
+		self.num_cols = 2*num_cols + 1
+
+		self.num_walls = num_walls
+
+		self.maze = prelim_maze.final_maze
+
+		if goal is None:
+			self.goal = prelim_maze.goal
+		else:
+			self.goal = self.get_cell(2*goal[0]+1, 2*goal[1]+1)
+
+		if start is None:
+			self.start = prelim_maze.start
+		else:
+			self.start = self.get_cell(2*start[0]+1, 2*start[1]+1)
+
+	def get_cell(self, row, col):
+		'''Returns Maze_Cell object at (row, col)'''
+
+		return self.maze[row][col]
+
+
+	def __str__(self):
+		'''Returns string representation of maze'''
+		new_maze = [[0 for col in range(self.num_cols)] for row in range(self.num_rows)]
+
+		for new_row in range(self.num_rows):
+			for new_col in range(self.num_cols):
+				cell = self.maze[new_row][new_col]
+				row = cell.row
+				col = cell.col
+
+				new_maze[new_row][new_col] = str(cell)
+
+		str_new_maze = ''
+		for row in new_maze:
+			str_new_maze += str(row)
+			str_new_maze += '\n'
+
+		return str_new_maze
 
 
 
-m = Maze(3, 3, 2, 0, 0)
-m.generate_maze()
-prelim = m.print_preliminary_maze()
-print (prelim)
-print (m)
+if __name__ == "__main__":
+	m = Maze(2, 2, 5, (0, 0))
+	# m.generate_maze()
+	# prelim = m.print_preliminary_maze()
+	# print (prelim)
+	# print (m.goal.row, m.goal.col)
+	print (m)
 
 
 
