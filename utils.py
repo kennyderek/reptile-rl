@@ -123,8 +123,9 @@ def generate_episode(policy, env, T):
     return state: list of torch.FloatTensor
            action: list of torch.FloatTensor
            reward: list of floats
+           NEW epsisode: all steps during episode
     '''
-    S, A, R = [], [], []
+    S, A, R, episode = [], [], [], []
     for i in range(0, T):
         state = Variable(torch.FloatTensor(env.get_state()))
         action_probs = policy(state)
@@ -137,6 +138,7 @@ def generate_episode(policy, env, T):
         S.append(state)
         A.append(action_idx)
         R.append(reward)
+        episode.append(env.state_rep_func(env.agent_x, env.agent_y))
 
         if next_state == None:
             # reached terminal state
@@ -145,6 +147,6 @@ def generate_episode(policy, env, T):
             state = next_state
     
     S.append(torch.FloatTensor(next_state) if next_state != None else None)
-    return S, A, R
+    return S, A, R, episode
 
 
