@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import random
 from torch.autograd import Variable
+import numpy as np
 
 class ReplayMemory(object):
     def __init__(self, memory_size = 1000, batch_size=1):
@@ -23,8 +24,9 @@ class ReplayMemory(object):
             difference = num_episodes - (abs(self.memory_size - len(self.memory)))
             self.memory = self.memory[difference: len(self.memory)]
         for key in episodes.keys():
-            episode = [episodes[key]]
-            num_episodes.append(episode)
+            episode = episodes[key]
+            self.memory.append(episode)
+
 
         # if len(self.memory) + 1 >= self.memory_size:
         #     self.memory[0:(1+len(self.memory))-self.memory_size] = []
@@ -36,12 +38,16 @@ class ReplayMemory(object):
         Agent doesn't necessarily have to be at the start of the maze, can be anywhere during the selected episode.
     '''        
     def sample(self, trace_length=100):
+        print ("memory: ", len(self.memory))
         if self.is_available():
             sample_index = random.randint(0, len(self.memory)-2)  #Prevent using most recent episodes
             episode = self.memory[sample_index]
-            episode_length = len(self.memory[sample_index])
-            start_point = random.randint(0, episode_length-2) #Use at least 2 frames
-            return episode[start_point:episode_length]
+            print ("sample episode: ", len(episode))
+            return episode
+            # episode_length = len(self.memory[sample_index])
+            # print ("episode_length: ", episode_length)
+            # start_point = random.randint(0, episode_length-2) #Use at least 2 frames Question: random start point?
+            # return episode[start_point:episode_length]
         return []
 
 
@@ -60,12 +66,12 @@ class ReplayMemory(object):
 class RNN(nn.Module):
     def __init__(self, num_actions, state_size):
         super(RNN, self).__init__()
-        self.input_size = 16 #for LSTM
+        self.input_size = 16 #for LSTM Question: how choose?
         self.hidden_size = 16 #for LSTM
         self.num_layers = 1
         self.num_actions = num_actions #Also output size and input size
-        self.first_input_size = state_size
-        self.fc1 = nn.Linear(self.first_input_size, self.hidden_size)
+        self.first_input_size = state_size  #Question: But variable size input?
+        self.fc1 = nn.Linear(self.first_input_size, self.hidden_size)  #QUESTION: Can I convolve (Conv2D) fullboard rep?
         self.flat1 = Flatten()
         self.lstm = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size, num_layers=self.num_layers)
         self.fc2 = nn.Linear(self.hidden_size, self.hidden_size)
@@ -76,18 +82,27 @@ class RNN(nn.Module):
 
 
     def forward(self, x, hidden):
+        print ("INPUT: ", x.numpy().shape)
         h1 = F.relu(self.fc1(x))
-        h2 = self.flat1(h1)
+        h2 = h1 #self.flat1(h1)
         h3 = h2.unsqueeze(1)
+        print ("h2: ", h2)
+        print ("hidden: ", hidden)
         h3, new_hidden = self.lstm(h2, hidden)
-        h4 = F.relu(self.fc1(hc3))
+        print ("h3: ", h3.detach().numpy().shape)
+        print ("new hidden: ", new_hidden)
+        h4 = F.relu(self.fc2(h3))
         h5 = self.fc2(h4)
         return h5, new_hidden
 
     #meant for one-hot encoding 
     def array_to_tensor(self, array):
         # numpy_array = np.array(array)
-        return torch.from_array(array)
+        print ("array in RNN: ", array)
+        array = np.array(array)
+        array = np.reshape(array, (1, len(array)))
+        print ("array shape: ", array.shape)
+        return torch.from_numpy(array).float()
 
     def array_list_to_batch(self, x):
         temp_batch = self.array_to_tensor(x[0])

@@ -14,16 +14,16 @@ from tqdm import tqdm
 from random import random
 
 from utils import *
-# from Replay import *
 
 import torch.multiprocessing as mp
 import copy
 from collections import OrderedDict
+from multiprocessing import Process, Manager
 
 
 class A2C(nn.Module):
 
-    def __init__(self, state_input_size, action_space_size, seed, lr, use_opt=False, ppo=False):
+    def __init__(self, state_input_size, action_space_size, seed, lr, lr_critic, use_opt=False, ppo=False):
         super(A2C, self).__init__()
 
         torch.manual_seed(seed)
@@ -36,6 +36,7 @@ class A2C(nn.Module):
         self.policy = Actor(state_input_size, action_space_size)
 
         self.lr = lr
+        self.lr_critic = lr_critic
 
         self.ppo = ppo
 
@@ -45,12 +46,15 @@ class A2C(nn.Module):
         else:
             for param in self.policy.parameters():
                 param.requires_grad = True
+            # for param in self.critic.parameters():
+            #     param.requires_grad = True
+            self.opt_c = optim.Adam(self.critic.parameters(), lr=self.lr_critic)
 
         self.old_policy = Actor(state_input_size, action_space_size)
 
     def init_optimizers(self):
         self.opt_a = optim.Adam(self.policy.parameters(), lr=self.lr)
-        self.opt_c = optim.Adam(self.critic.parameters(), lr=self.lr)
+        self.opt_c = optim.Adam(self.critic.parameters(), lr=self.lr_critic)
 
     def compute_loss(self, state, action, weights):
         '''
@@ -66,16 +70,18 @@ class A2C(nn.Module):
             # entropy_loss = Categorical(self.policy(state)).entropy()
             return -(torch.min(clipped_adv, non_clipped_adv)).mean(), None
         else:
-            ratios =  Categorical(self.policy(state)).log_prob(action)
+            ratios = Categorical(self.policy(state)).log_prob(action)
             # entropy =  Categorical(self.policy(state)).log_prob(action)
-            adv = ratios * weights
-            return -(adv.mean()), None
+            loss = ratios * weights
+            # print("policy loss:", loss.mean())
+            return -(loss.mean()), None
 
     def compute_critic_loss(self, state, weights):
         '''
         weights is what to multiply the log probability by
         '''
-        loss = self.critic(state)*weights
+        loss = -self.critic(state)*weights
+        # print("critic loss:", loss.mean())
         return loss.mean()
     
     def normalize_advantages(self, advantages):
@@ -90,16 +96,19 @@ class A2C(nn.Module):
         return advantages
 
     def update_params(self, params, loss, step_size=0.1):
-        """Apply one step of gradient descent on the loss function `loss`, with 
+        """
+        Apply one step of gradient descent on the loss function `loss`, with 
         step-size `step_size`, and returns the updated parameters of the neural 
         network.
         """
         # params = OrderedDict(self.policy.named_parameters())
 
         grads = torch.autograd.grad(loss, params.values(),
-                                    create_graph=False)
+                                    create_graph=False, allow_unused=True)
 
         for (name, param), grad in zip(params.items(), grads):
+            if grad == None:
+                grad = 0
             params[name] = param - step_size * grad
 
         # self.policy.load_state_dict(params)
@@ -116,6 +125,8 @@ class A2C(nn.Module):
             S, A, R, episode = generate_episode(self.old_policy, env, horizon)
         else:
             S, A, R, episode = generate_episode(self.policy, env, horizon)
+            # print ("episode in step: ", episode)
+        Rn = self.normalize_advantages(R)
 
         traj_len = len(A)
 
@@ -127,7 +138,8 @@ class A2C(nn.Module):
         #     reward_tplusone = discounted_rewards[t]
 
         # compute advantage (of that action)
-        advantages = [0]*traj_len
+        td_err = [0]*traj_len
+        adv = [0]*traj_len
         for t in range(traj_len):
             '''
             The commented out method may/may not be better, all it does is help propagate reward
@@ -139,22 +151,25 @@ class A2C(nn.Module):
             # else:
             #     advantages[t] = sum([R[t+i]*lam**(i) for i in range(k)]) + lam**k*self.critic(S[t+k]) - self.critic(S[t])
             if S[t+1] == None:
-                advantages[t] = R[t] - lam*self.critic(S[t])
+                td_err[t] = Rn[t] - self.critic(S[t]).item()
+                adv[t] = Rn[t] - self.critic(S[t]).item()
             else:
-                advantages[t] = R[t] - lam*self.critic(S[t]) + self.critic(S[t+1])
+                td_err[t] = Rn[t] + (lam*self.critic(S[t+1]) - self.critic(S[t])).item()
+                adv[t] = Rn[t] - self.critic(S[t]).item()
         
         mini_batch_states = []
         mini_batch_actions = []
-        mini_batch_weights = []
+        mini_batch_td = []
+        mini_batch_adv = []
         mini_batch_rewards = []
         for t in range(traj_len):
             mini_batch_states.append(S[t].data.numpy())
             mini_batch_actions.append(A[t])
-            mini_batch_weights.append(advantages[t].item())
+            mini_batch_td.append(td_err[t])
+            mini_batch_adv.append(adv[t])
             mini_batch_rewards.append(R[t])
 
-        return env, mini_batch_states, mini_batch_actions, mini_batch_weights, mini_batch_rewards, episode
-
+        return env, mini_batch_states, mini_batch_actions, mini_batch_td, mini_batch_adv, mini_batch_rewards, episode
 
     def __step_with_other_policy(self, env, horizon, other_policy):
         '''
@@ -167,6 +182,8 @@ class A2C(nn.Module):
             S, A, R, episode = generate_episode(other_policy, env, horizon)
         else:
             S, A, R, episode = generate_episode(other_policy, env, horizon)
+            print ("episode in __step_with_other_policy: ", episode)
+        Rn = self.normalize_advantages(R)
 
         traj_len = len(A)
 
@@ -178,7 +195,8 @@ class A2C(nn.Module):
         #     reward_tplusone = discounted_rewards[t]
 
         # compute advantage (of that action)
-        advantages = [0]*traj_len
+        td_err = [0]*traj_len
+        adv = [0]*traj_len
         for t in range(traj_len):
             '''
             The commented out method may/may not be better, all it does is help propagate reward
@@ -190,21 +208,27 @@ class A2C(nn.Module):
             # else:
             #     advantages[t] = sum([R[t+i]*lam**(i) for i in range(k)]) + lam**k*self.critic(S[t+k]) - self.critic(S[t])
             if S[t+1] == None:
-                advantages[t] = R[t] - lam*self.critic(S[t])
+                td_err[t] = Rn[t] - self.critic(S[t]).item()
+                adv[t] = Rn[t] - self.critic(S[t]).item()
             else:
-                advantages[t] = R[t] - lam*self.critic(S[t]) + self.critic(S[t+1])
+                td_err[t] = Rn[t] + (lam*self.critic(S[t+1]) - self.critic(S[t])).item()
+                adv[t] = Rn[t] - self.critic(S[t]).item()
         
         mini_batch_states = []
         mini_batch_actions = []
-        mini_batch_weights = []
+        mini_batch_td = []
+        mini_batch_adv = []
         mini_batch_rewards = []
         for t in range(traj_len):
             mini_batch_states.append(S[t].data.numpy())
             mini_batch_actions.append(A[t])
-            mini_batch_weights.append(advantages[t].item())
+            mini_batch_td.append(td_err[t])
+            mini_batch_adv.append(adv[t])
             mini_batch_rewards.append(R[t])
 
-        return env, mini_batch_states, mini_batch_actions, mini_batch_weights, mini_batch_rewards, episode
+        return env, mini_batch_states, mini_batch_actions, mini_batch_td, mini_batch_adv, mini_batch_rewards, episode
+
+
     '''
     For 2D Maze nav task:
 
@@ -216,7 +240,7 @@ class A2C(nn.Module):
 
     In our evaluation, we compare adaptation to a new task with up to 4 gradient updates, each with 40 samples.
     '''
-    def train(self, env, num_batches = 1, batch_size = 20, horizon = 100, envs_per_batch=None, batch_envs=None):
+    def train(self, env, num_batches = 1, batch_size = 20, horizon = 100, batch_envs=None):
         '''
         Train using batch_size samples of complete trajectories, num_batches times (so num_batches gradient updates)
         
@@ -224,33 +248,150 @@ class A2C(nn.Module):
             where t = min(the number of steps to reach the goal, horizon)
         '''
         cumulative_rewards = []
-        total_episodes = {} #NEW Stores all generated episodes and steps
+        #ADDED
+        manager = Manager()
+        total_episodes_dict = manager.dict() #ADDED
         if self.ppo:
             self.old_policy.load_state_dict(copy.deepcopy(self.policy.state_dict()))
 
         for batch in tqdm(range(num_batches)):
-            if envs_per_batch == None:
-                if batch_envs == None:
-                    parallel_envs = [env.generate_fresh() for _ in range(batch_size)]
-                else:
-                    assert len(batch_envs) == batch_size, "supplied envs must match "
+
+            if batch_envs == None:
+                parallel_envs = [env.generate_fresh() for _ in range(batch_size)]
             else:
-                parallel_envs = [envs_per_batch[batch % len(envs_per_batch)] for _ in range(batch_size)]
+                assert len(batch_envs) == batch_size, "supplied envs must match "
 
             batch_states = []
             batch_actions = []
-            batch_weights = []
+            batch_td = []
+            batch_adv = []
+            batch_rewards = []
+
+            q = mp.Queue()
+            def multi_process(self, env, horizon, q, done, rank, total_episodes):
+                env, s, a, td, adv, r, episode = self.__step(env, horizon)
+                print ("episode in A2C train: ", len(episode))
+                q.put((s, a, td, adv, r))
+                # print ("rank: ", rank)
+                if rank in total_episodes:
+                    total_episodes[rank].append(episode)
+                else:
+                    total_episodes[rank] = episode
+                # print ("total_episodes: ", total_episodes.keys())
+                done.wait()
+
+
+            done = mp.Event()
+
+            num_processes = batch_size
+            self.share_memory()
+
+            processes = []
+            for rank in range(num_processes):
+                # print ("rank: ", rank)
+                p = mp.Process(target=multi_process, args=(self, parallel_envs[rank], horizon, q, done, rank, total_episodes_dict))
+                p.start()
+                processes.append(p)
+
+            for i in range(num_processes):
+                (s, a, td, adv, r) = q.get()
+                batch_states.extend(s)
+                batch_actions.extend(a)
+                batch_td.extend(td)
+                batch_adv.extend(adv)
+                batch_rewards.extend(r)
+            
+            done.set()
+            for p in processes:
+                p.join()
+
+            # print ("total_episodes_dict: ", total_episodes_dict)
+            # batch_td = self.normalize_advantages(batch_td)
+            cumulative_rewards.append(sum(batch_rewards)/batch_size)
+
+            batch_actor_loss, batch_entropy_loss = self.compute_loss(
+                                    state=torch.as_tensor(batch_states, dtype=torch.float32),
+                                    action=torch.as_tensor(batch_actions, dtype=torch.float32),
+                                    weights=torch.as_tensor(batch_adv, dtype=torch.float32))
+
+            # print ("batch_actor_loss: ", batch_actor_loss)
+            # print ("batch_entropy_loss: ", batch_entropy_loss)
+            
+            batch_critic_loss = self.compute_critic_loss(
+                                    state=torch.as_tensor(batch_states, dtype=torch.float32),
+                                    weights=torch.as_tensor(batch_td, dtype=torch.float32))
+
+            # print ("batch_critic_loss: ", batch_critic_loss)
+
+            if self.ppo:
+                # we make a copy of the current policy to use as the "old" policy in the next iteration
+                temp_state_dict = copy.deepcopy(self.policy.state_dict())
+
+            # update new policy
+            if self.use_opt:
+                self.opt_a.zero_grad()
+                batch_actor_loss.backward()
+                self.opt_a.step()
+
+                self.opt_c.zero_grad()
+                batch_critic_loss.backward()
+                self.opt_c.step()
+            else:
+                # call update params manually, without fancy adaptive stuff
+                params = OrderedDict(self.policy.named_parameters())
+                self.update_params(params, batch_actor_loss, step_size = self.lr)
+                self.policy.load_state_dict(params)
+
+                # params = OrderedDict(self.critic.named_parameters())
+                # self.update_params(params, batch_critic_loss, step_size = self.lr_critic)
+                # self.critic.load_state_dict(params)
+                self.opt_c.zero_grad()
+                batch_critic_loss.backward()
+                self.opt_c.step()
+
+            if self.ppo:
+                # update old policy to the previous new policy
+                self.old_policy.load_state_dict(temp_state_dict)
+
+            if batch % 10 == 0:
+                print("Cumulative Rewards: ", cumulative_rewards[-1])
+
+        print ("total_episodes_dict: ", len(total_episodes_dict[0]))
+        return cumulative_rewards, total_episodes_dict
+
+    def train_with_policy(self, env, other_policy, num_batches = 1, batch_size = 20, horizon = 100, batch_envs=None):
+        '''
+        Train using batch_size samples of complete trajectories, num_batches times (so num_batches gradient updates)
+        
+        A trajectory is defined as a State, Action, Reward secquence of t steps,
+            where t = min(the number of steps to reach the goal, horizon)
+        '''
+        cumulative_rewards = []
+        total_episodes = {} #ADDED
+        if self.ppo:
+            self.old_policy.load_state_dict(copy.deepcopy(self.policy.state_dict()))
+
+        for batch in tqdm(range(num_batches)):
+
+            if batch_envs == None:
+                parallel_envs = [env.generate_fresh() for _ in range(batch_size)]
+            else:
+                assert len(batch_envs) == batch_size, "supplied envs must match "
+
+            batch_states = []
+            batch_actions = []
+            batch_td = []
+            batch_adv = []
             batch_rewards = []
 
             q = mp.Queue()
             def multi_process(self, env, horizon, q, done, rank):
-                env, s, a, w, r, episode = self.__step(env, horizon)
-                q.put((s, a, w, r))
+                env, s, a, td, adv, r = self.__step_with_other_policy(env, horizon, other_policy)
+                q.put((s, a, td, adv, r))
                 if rank in total_episodes:
-                    total_episodes[rank].append(episode) #NEW
+                    total_episodes[rank].append(episode)
                 else:
                     total_episodes[rank] = [episode]
-
                 done.wait()
 
             done = mp.Event()
@@ -265,27 +406,33 @@ class A2C(nn.Module):
                 processes.append(p)
 
             for i in range(num_processes):
-                (s, a, w, r) = q.get()
+                (s, a, td, adv, r) = q.get()
                 batch_states.extend(s)
                 batch_actions.extend(a)
-                batch_weights.extend(w)
+                batch_td.extend(td)
+                batch_adv.extend(adv)
                 batch_rewards.extend(r)
             
             done.set()
             for p in processes:
                 p.join()
             
-            batch_weights = self.normalize_advantages(batch_weights)
+            # batch_td = self.normalize_advantages(batch_td)
             cumulative_rewards.append(sum(batch_rewards)/batch_size)
 
             batch_actor_loss, batch_entropy_loss = self.compute_loss(
                                     state=torch.as_tensor(batch_states, dtype=torch.float32),
                                     action=torch.as_tensor(batch_actions, dtype=torch.float32),
-                                    weights=torch.as_tensor(batch_weights, dtype=torch.float32))
+                                    weights=torch.as_tensor(batch_adv, dtype=torch.float32))
+
+            print ("batch_actor_loss: ", batch_actor_loss)
+            # print ("batch_entropy_loss: ", batch_entropy_loss)
             
             batch_critic_loss = self.compute_critic_loss(
                                     state=torch.as_tensor(batch_states, dtype=torch.float32),
-                                    weights=torch.as_tensor(batch_weights, dtype=torch.float32))
+                                    weights=torch.as_tensor(batch_td, dtype=torch.float32))
+
+            print ("batch_critic_loss: ", batch_critic_loss)
 
             if self.ppo:
                 # we make a copy of the current policy to use as the "old" policy in the next iteration
@@ -306,123 +453,19 @@ class A2C(nn.Module):
                 self.update_params(params, batch_actor_loss, step_size = self.lr)
                 self.policy.load_state_dict(params)
 
-                params = OrderedDict(self.critic.named_parameters())
-                self.update_params(params, batch_critic_loss, step_size = self.lr)
-                self.critic.load_state_dict(params)
-            
-
-            if self.ppo:
-                # update old policy to the previous new policy
-                self.old_policy.load_state_dict(temp_state_dict)
-
-            if batch % 10 == 0:
-                print(cumulative_rewards[-1])
-
-        return cumulative_rewards, total_episodes
-
-    def train_with_policy(self, env, other_policy, num_batches = 1, batch_size = 20, horizon = 100, envs_per_batch=None, batch_envs=None):
-        '''
-        Train using batch_size samples of complete trajectories, num_batches times (so num_batches gradient updates)
-        
-        A trajectory is defined as a State, Action, Reward secquence of t steps,
-            where t = min(the number of steps to reach the goal, horizon)
-        '''
-        cumulative_rewards = []
-        total_episodes = {} #NEW Stores all generated episodes and steps
-        if self.ppo:
-            self.old_policy.load_state_dict(copy.deepcopy(self.policy.state_dict()))
-
-
-        for batch in tqdm(range(num_batches)):
-            if envs_per_batch == None:
-                if batch_envs == None:
-                    parallel_envs = [env.generate_fresh() for _ in range(batch_size)]
-                else:
-                    assert len(batch_envs) == batch_size, "supplied envs must match "
-            else:
-                parallel_envs = [envs_per_batch[batch % len(envs_per_batch)] for _ in range(batch_size)]
-
-            batch_states = []
-            batch_actions = []
-            batch_weights = []
-            batch_rewards = []
-
-            q = mp.Queue()
-            def multi_process(self, env, horizon, q, done, rank):
-                env, s, a, w, r, epsiode = self.__step_with_other_policy(env, horizon, other_policy)
-                q.put((s, a, w, r))
-                if rank in total_envs:
-                    total_episodes[rank].append(episode) #NEW
-                else:
-                    total_episodes.append(episode)
-
-                done.wait()
-
-            done = mp.Event()
-
-            num_processes = batch_size
-            self.share_memory()
-
-            processes = []
-            for rank in range(num_processes):
-                p = mp.Process(target=multi_process, args=(self, parallel_envs[rank], horizon, q, done, rank))
-                p.start()
-                processes.append(p)
-
-            for i in range(num_processes):
-                (s, a, w, r) = q.get()
-                batch_states.extend(s)
-                batch_actions.extend(a)
-                batch_weights.extend(w)
-                batch_rewards.extend(r)
-            
-            done.set()
-            for p in processes:
-                p.join()
-            
-            batch_weights = self.normalize_advantages(batch_weights)
-            cumulative_rewards.append(sum(batch_rewards)/batch_size)
-
-            batch_actor_loss, batch_entropy_loss = self.compute_loss(
-                                    state=torch.as_tensor(batch_states, dtype=torch.float32),
-                                    action=torch.as_tensor(batch_actions, dtype=torch.float32),
-                                    weights=torch.as_tensor(batch_weights, dtype=torch.float32))
-            
-            batch_critic_loss = self.compute_critic_loss(
-                                    state=torch.as_tensor(batch_states, dtype=torch.float32),
-                                    weights=torch.as_tensor(batch_weights, dtype=torch.float32))
-
-            if self.ppo:
-                # we make a copy of the current policy to use as the "old" policy in the next iteration
-                temp_state_dict = copy.deepcopy(self.policy.state_dict())
-
-            # update new policy
-            if self.use_opt:
-                self.opt_a.zero_grad()
-                batch_actor_loss.backward()
-                self.opt_a.step()
-
+                # params = OrderedDict(self.critic.named_parameters())
+                # self.update_params(params, batch_critic_loss, step_size = self.lr_critic)
+                # self.critic.load_state_dict(params)
                 self.opt_c.zero_grad()
                 batch_critic_loss.backward()
                 self.opt_c.step()
-            else:
-                # call update params manually, without fancy adaptive stuff
-                params = OrderedDict(self.policy.named_parameters())
-                self.update_params(params, batch_actor_loss, step_size = self.lr)
-                self.policy.load_state_dict(params)
-
-                params = OrderedDict(self.critic.named_parameters())
-                self.update_params(params, batch_critic_loss, step_size = self.lr)
-                self.critic.load_state_dict(params)
-            
 
             if self.ppo:
                 # update old policy to the previous new policy
                 self.old_policy.load_state_dict(temp_state_dict)
 
             if batch % 10 == 0:
-                print(cumulative_rewards[-1])
+                print("Cumulative Rewards: ", cumulative_rewards[-1])
 
         return cumulative_rewards, total_episodes
-
 

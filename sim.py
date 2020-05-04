@@ -40,7 +40,7 @@ class MazeSimulator:
         if self.state_rep == "fullboard":
             self.state_size = self.num_row * self.num_col
         elif self.state_rep == "onehot":
-            self.state_size = self.num_row * self.num_col
+            self.state_size = self.num_row + self.num_col
         elif self.state_rep == "xy":
             self.state_size = 2
         
@@ -170,7 +170,7 @@ class MazeSimulator:
         # l[y + self.num_row] = 1
         return l
 
-    def visualize(self, policy):
+    def visualize(self, policy, filename="Heatmap"):
         '''
         Visualize a policy's decisions in a heatmap fashion
         '''
@@ -192,11 +192,11 @@ class MazeSimulator:
                         heatmap[y_loc][x_loc] = action_probs[a].item()
 
 
-        plt.imshow(np.array(heatmap), cmap='PRGn', interpolation='nearest')
-        plt.savefig("Heatmap")
+        plt.imshow(np.array(heatmap), cmap='Blues', interpolation='nearest')
+        plt.savefig(filename)
         plt.clf()
 
-    def visualize_value(self, critic):
+    def visualize_value(self, critic, filename="Valuemap"):
         '''
         Visualize the value of each state
         '''
@@ -209,8 +209,8 @@ class MazeSimulator:
                 else:
                     heatmap[y][x] = critic(torch.as_tensor(self.maze_info[y][x], dtype=torch.float32)).item()
 
-        plt.imshow(np.array(heatmap), cmap='PRGn', interpolation='nearest')
-        plt.savefig("Valuemap")
+        plt.imshow(np.array(heatmap), cmap='Blues', interpolation='nearest')
+        plt.savefig(filename)
         plt.clf()
 
 
