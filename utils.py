@@ -49,22 +49,42 @@ class Recurrent_Actor(nn.Module):
         self.reward_episode_local = list()
 
     def forward(self, x):
-        print ("x: ", x)
+        # print ("x: ", x)
         size = x.shape[0]
-        print ("size: ", size)
-        x = x.view([1, size]) #batch size = 1
+        # print ("size: ", size)
+        if size > 2:
+            x = x.view([1, size*2])
+            # for row in x:
+            #     print ("\nrow: ", row)
+            #     row = row.view([1, 2]) #batch size = 1
 
-        if len(self.hidden_history) > 0:
-            h_0 = self.hidden_history[-1]
+            #     if len(self.hidden_history) > 0:
+            #         h_0 = self.hidden_history[-1]
+            #     else:
+            #         h_0 = None
+
+            #     row = self.rnn(row, h_0)
+            #     self.hidden_history.append(x)
+
+            #     row = self.relu(row)
+            #     row = self.linear(row)
+            #     row = self.softmax(row)
+            # return row
         else:
-            h_0 = None
 
-        x = self.rnn(x, h_0)
-        self.hidden_history.append(x)
+            x = x.view([1, size]) #batch size = 1
 
-        x = self.relu(x)
-        x = self.linear(x)
-        x = self.softmax(x)
+            if len(self.hidden_history) > 0:
+                h_0 = self.hidden_history[-1]
+            else:
+                h_0 = None
+
+            x = self.rnn(x, h_0)
+            self.hidden_history.append(x)
+
+            x = self.relu(x)
+            x = self.linear(x)
+            x = self.softmax(x)
 
         return x   
 
@@ -152,6 +172,7 @@ class ActorCritic(nn.Module):
 
         self.input_size = state_input_size
         self.action_space_size = action_space_size
+        self.batch_size = batch_size
 
         self.hidden_size = 100
 
@@ -173,7 +194,9 @@ class ActorCritic(nn.Module):
         '''
         x is a state, return estimate of its value
         '''
-
+        print ("\nx: ", x)
+        print ("\ninput_size: ", self.input_size)  #TODO: batch
+        
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = F.relu(self.fc3(x))

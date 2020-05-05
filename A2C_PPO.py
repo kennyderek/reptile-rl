@@ -35,9 +35,9 @@ class A2C(nn.Module):
 
         self.critic = Critic(state_input_size, 1)
 
-        self.policy = Actor(state_input_size, action_space_size)
+        # self.policy = Actor(state_input_size, action_space_size)
 
-        # self.policy = Recurrent_Actor(state_input_size, action_space_size)
+        self.policy = Recurrent_Actor(state_input_size, action_space_size)
         self.optimizer = optim.Adam(self.critic.parameters(), lr=lr_critic)
 
         self.lr = lr
@@ -79,7 +79,10 @@ class A2C(nn.Module):
             # entropy =  Categorical(self.policy(state)).log_prob(action)
             loss = ratios * weights
             # print("policy loss:", loss.mean())
-            return -(loss.mean()), None
+            return_tensor = torch.Tensor([loss.mean()])
+            return_tensor.requires_grad_()
+            return return_tensor, None
+            #return -(loss.mean()), None
 
     def compute_critic_loss(self, state, weights):
         '''
@@ -108,10 +111,11 @@ class A2C(nn.Module):
         """
         # params = OrderedDict(self.policy.named_parameters())
 
-        grads = torch.autograd.grad(loss, params.values(),
-                                    create_graph=False)
+        grads = torch.autograd.grad(loss, params.values(), create_graph=False, allow_unused=True)
 
         for (name, param), grad in zip(params.items(), grads):
+            if grad == None:
+                grad = 0.0
             params[name] = param - step_size * grad
 
         # self.policy.load_state_dict(params)
@@ -196,6 +200,9 @@ class A2C(nn.Module):
         if self.ppo:
             self.old_policy.load_state_dict(copy.deepcopy(self.policy.state_dict()))
 
+        print ("\nnum_batches: ", num_batches)
+        print ("\nbatch_size: ", batch_size)
+
         for batch in tqdm(range(num_batches)):
 
             if batch_envs == None:
@@ -219,6 +226,8 @@ class A2C(nn.Module):
 
             num_processes = batch_size
             self.share_memory()
+
+            print ("\nnum_processes: ", num_processes)
 
             processes = []
             for rank in range(num_processes):
@@ -270,6 +279,7 @@ class A2C(nn.Module):
             else:
                 # call update params manually, without fancy adaptive stuff
                 params = OrderedDict(self.policy.named_parameters())
+                print ("\nparams: ", params)
                 self.update_params(params, batch_actor_loss, step_size = self.lr)
                 # self.policy.reward_episode = batch_rewards
                 # self.update_policy()

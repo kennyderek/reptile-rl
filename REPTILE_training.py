@@ -121,8 +121,8 @@ if __name__ == "__main__":
 
         model_init, rewards = train_reptile(model, sample, 500, meta_lr=0.05)
 
-        world.visualize(model_init.policy)
-        world.visualize_value(model_init.critic)
+        # world.visualize(model_init.policy)
+        # world.visualize_value(model_init.critic)
 
         plt.plot(list(range(len(rewards))), rewards)
         plt.savefig("RewardsOfReptile")
