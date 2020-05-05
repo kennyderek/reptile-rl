@@ -20,6 +20,7 @@ def update_init_params(target, old, step_size = 0.1):
         updated[name_old] = oldp + step_size * (targetp - oldp) # grad ascent so its a plus
     return updated
 
+
 def train_reptile(model, sampler, num_meta_batches, meta_lr = 0.1):
     init_params_policy = deepcopy(OrderedDict(model.policy.named_parameters()))
     init_params_critic = deepcopy(OrderedDict(model.critic.named_parameters()))
@@ -99,7 +100,9 @@ if __name__ == "__main__":
                         wall_penalty=0,
                         normalize_state=True
                     )
-        model = A2C(world.state_size, world.num_actions, seed=1, lr=0.1, use_opt=False, ppo=False)
+        model = A2C(world.state_size, world.num_actions, seed=1, lr=0.1, lr_critic=0.1, use_opt=False, ppo=False)
+
+        # model = Recurrent_Actor(world.state_size, world.num_actions)
 
         def sample():
             maze_instance = deepcopy(maze)

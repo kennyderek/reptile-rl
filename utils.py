@@ -8,6 +8,67 @@ import logging
 logging.basicConfig(filename='goal_locations.log',level=logging.INFO)
 
 
+class Recurrent_Actor(nn.Module):
+
+    def __init__(self, state_input_size, action_space_size, hidden_size=128, n_layers=1, dropout_rate=1.0, gamma=0.9):
+       super(Recurrent_Actor, self).__init__()
+       self.input_size = state_input_size
+       self.output_size = action_space_size
+       self.hidden_size = hidden_size
+       self.n_layers = n_layers
+
+       self.rnn = nn.GRUCell(input_size=self.input_size, hidden_size=self.hidden_size)
+
+       self.relu = nn.LeakyReLU()
+       self.linear = nn.Linear(self.hidden_size, self.output_size)
+       self.softmax = nn.Softmax(dim=-1)
+
+       self.dropout_rate = dropout_rate  #1.0 means no dropout, good values = 0.5-0.8
+       self.dropout = nn.Dropout(p=self.dropout_rate)
+       self.gamma = gamma  #Typically, 0.8-0.99
+
+       #History
+       self.hidden_history = None
+
+       self.policy_history = None
+       self.reward_episode = None
+       self.reward_episode_local = None
+
+       self.reset_episode()
+
+       #Overall Reward and Loss History
+       self.reward_history = list()
+       self.reward_history_local = list()
+       self.loss_history = list()
+
+    def reset_episode(self):
+        #Episode policy and reward history
+        self.hidden_history = list()
+        self.policy_history = list()
+        self.reward_episode = list()
+        self.reward_episode_local = list()
+
+    def forward(self, x):
+        print ("x: ", x)
+        size = x.shape[0]
+        print ("size: ", size)
+        x = x.view([1, size]) #batch size = 1
+
+        if len(self.hidden_history) > 0:
+            h_0 = self.hidden_history[-1]
+        else:
+            h_0 = None
+
+        x = self.rnn(x, h_0)
+        self.hidden_history.append(x)
+
+        x = self.relu(x)
+        x = self.linear(x)
+        x = self.softmax(x)
+
+        return x   
+
+
 class Actor(nn.Module):
 
     def __init__(self, state_input_size, action_space_size):
@@ -141,7 +202,7 @@ def generate_episode(policy, env, T):
            action: list of torch.FloatTensor
            reward: list of floats
     '''
-    S, A, R = [], [], []
+    S, A, R, episode = [], [], [], []
     for i in range(0, T):
         state = Variable(torch.FloatTensor(env.get_state()))
         action_probs = policy(state)
@@ -154,6 +215,7 @@ def generate_episode(policy, env, T):
         S.append(state)
         A.append(action_idx)
         R.append(reward)
+        episode.append(env.state_rep_func(env.agent_x, env.agent_y))
 
         if next_state == None:
             # reached terminal state
@@ -165,6 +227,6 @@ def generate_episode(policy, env, T):
         R[-1] = -100
     logging.info(i)
     S.append(torch.FloatTensor(next_state) if next_state != None else None)
-    return S, A, R
+    return S, A, R, episode
 
 

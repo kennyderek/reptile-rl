@@ -30,9 +30,15 @@ class A2C(nn.Module):
         self.state_input_size = state_input_size
         self.action_space_size = action_space_size
 
+        print ("\nstate_input_size: ", self.state_input_size)
+        print ("\naction_space_size: ", self.action_space_size)
+
         self.critic = Critic(state_input_size, 1)
 
         self.policy = Actor(state_input_size, action_space_size)
+
+        # self.policy = Recurrent_Actor(state_input_size, action_space_size)
+        self.optimizer = optim.Adam(self.critic.parameters(), lr=lr_critic)
 
         self.lr = lr
         self.lr_critic = lr_critic
@@ -111,6 +117,7 @@ class A2C(nn.Module):
         # self.policy.load_state_dict(params)
         return params
 
+
     def __step(self, env, horizon):
         '''
         makes horizon steps in this trajectory in this environment
@@ -119,9 +126,9 @@ class A2C(nn.Module):
 
         # number of steps to take in this environment
         if self.ppo:
-            S, A, R = generate_episode(self.old_policy, env, horizon)
+            S, A, R, episode = generate_episode(self.old_policy, env, horizon)
         else:
-            S, A, R = generate_episode(self.policy, env, horizon)
+            S, A, R, episode = generate_episode(self.policy, env, horizon)
         Rn = self.normalize_advantages(R)
 
         traj_len = len(A)
@@ -165,7 +172,7 @@ class A2C(nn.Module):
             mini_batch_adv.append(adv[t])
             mini_batch_rewards.append(R[t])
 
-        return env, mini_batch_states, mini_batch_actions, mini_batch_td, mini_batch_adv, mini_batch_rewards
+        return env, mini_batch_states, mini_batch_actions, mini_batch_td, mini_batch_adv, mini_batch_rewards, episode
 
     '''
     For 2D Maze nav task:
@@ -204,7 +211,7 @@ class A2C(nn.Module):
 
             q = mp.Queue()
             def multi_process(self, env, horizon, q, done):
-                env, s, a, td, adv, r = self.__step(env, horizon)
+                env, s, a, td, adv, r, episode = self.__step(env, horizon)
                 q.put((s, a, td, adv, r))
                 done.wait()
 
@@ -230,6 +237,8 @@ class A2C(nn.Module):
             done.set()
             for p in processes:
                 p.join()
+
+            print ("\nDONE HERE")
             
             # batch_td = self.normalize_advantages(batch_td)
             cumulative_rewards.append(sum(batch_rewards)/batch_size)
@@ -238,6 +247,8 @@ class A2C(nn.Module):
                                     state=torch.as_tensor(batch_states, dtype=torch.float32),
                                     action=torch.as_tensor(batch_actions, dtype=torch.float32),
                                     weights=torch.as_tensor(batch_adv, dtype=torch.float32))
+
+            print ("\n ACTOR LOSS")
             
             batch_critic_loss = self.compute_critic_loss(
                                     state=torch.as_tensor(batch_states, dtype=torch.float32),
@@ -260,7 +271,9 @@ class A2C(nn.Module):
                 # call update params manually, without fancy adaptive stuff
                 params = OrderedDict(self.policy.named_parameters())
                 self.update_params(params, batch_actor_loss, step_size = self.lr)
-                self.policy.load_state_dict(params)
+                # self.policy.reward_episode = batch_rewards
+                # self.update_policy()
+                # self.policy.load_state_dict(params)
 
                 # params = OrderedDict(self.critic.named_parameters())
                 # self.update_params(params, batch_critic_loss, step_size = self.lr_critic)
@@ -278,4 +291,35 @@ class A2C(nn.Module):
 
         return cumulative_rewards
 
+    #For recurrent policy
+    def update_policy(self):
+        R = 0
+        rewards = []
+
+        #Discount future rewards back to the present using gamma
+        for r in reversed(self.policy.reward_episode):
+            R = r + self.policy.gamma * R
+            rewards.insert(0, R)
+
+        #Scale rewards
+        rewards = torch.FloatTensor(rewards)
+        
+        #Normalize rewards
+        rewards = (rewards - rewards.mean()) / (rewards.std()) #+ float(np.info(np.float32).eps))
+
+        #Calculate loss
+        policy_history = torch.stack(self.policy.policy_history)
+        # print ("HERE: ", policy_history)
+        loss = (torch.mul(self.policy_history, rewards).mul(-1), -1)  #TODO
+
+        #Update network weights
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        #Save and initialize episode history counters
+        self.policy.loss_history.append(loss.data[0])
+        self.policy.reward_history.append(np.sum(policy.reward_episode))
+        self.policy.policy_history.append(self.policy.named_parameters())
+        self.policy.reset_episode()
 
