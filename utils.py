@@ -21,7 +21,9 @@ class LSTMActorCriticModel(nn.Module):
         self.lstm = nn.LSTMCell(self.hidden_size, self.hidden_size)
 
         self.actor_linear = nn.Linear(self.hidden_size, self.action_space_size)
-        self.critic_linear = nn.Linear(self.hidden_size, self.action_space_size)
+        self.critic_linear = nn.Linear(self.hidden_size, 1)
+
+        self.actor_softmax = nn.Softmax()
 
         # self.apply(weights_init(self))  #TODO: impl this
         relu_gain = nn.init.calculate_gain('relu')
@@ -31,11 +33,15 @@ class LSTMActorCriticModel(nn.Module):
         self.critic_linear.weight.data = norm_col_init(self.critic_linear.weight.data, 1.0)
         self.critic_linear.bias.data.fill_(0)
 
-        self.lstm.bias_ih.data.fill_(0)
-        self.lstm.bias_hh.data.fill_(0)
+        # self.lstm.bias_ih.data.fill_(0)
+        # self.lstm.bias_hh.data.fill_(0)
 
-        self.hx = None
-        self.cx = None
+        # self.hx = None
+        # self.cx = None
+
+        self.hx = torch.randn((1, 1, self.hidden_size), requires_grad=True)[0]  #TODO: Dimensions
+        self.cx = torch.randn((1, 1, self.hidden_size), requires_grad=True)[0]  #TODO: Dimensions
+
 
         # self.train()  #TODO: Find this
 
@@ -43,25 +49,90 @@ class LSTMActorCriticModel(nn.Module):
         inputs, (hx, cx) = inputs
 
         # print ("inputs: ", inputs)
-        x = self.fc1(inputs)
+        x = F.relu(self.fc1(inputs))
 
+
+
+        # x, (hx, cx) = inputs
         # print ("x: ", x)
-        print ("x.size(0): ", x.size(0))
-        x = x.view((-1, x.size(0)))
+        # print ("x.size(0): ", x.size(0))
+        # if x.size(0) == self.input_size:
+        #     x = x.view(1, 1, x.size(0))
+        #     batch_size = 1
+        # x = x.view(-1, x.size(0))
+        # else:
+        #     x = x.view(x.size(0), 1, self.input_size)
+        #     batch_size = x.size(0)
 
         # print ("x after resize: ", x)
 
-        hx, cx = self.lstm(x, (hx, cx))
 
-        self.hx = hx
-        self.cx = cx
+        # hx = hx.view((1, 1, self.hidden_size))
+        # cx = cx.view((1, 1, self.hidden_size))
+
+        # print ("hx: ", hx.shape)
+        # print ("cx: ", cx.shape)
+
+        # print ("x: ", x.size(0))
+        # print ("x: ", x)
+
+        # x = x.view(-1, x.size(0))
+
+        # hx, cx = self.lstm(x, (hx, cx))  #TODO: Can't feed batch to LSTM
 
 
+        # self.hx = hx  #TODO: Where should I store these?
+        # self.cx = cx
 
-        x = hx
+        # x = hx
 
-        return self.actor_linear(x), self.critic_linear(x), (hx, cx)
+        # actor_x = self.actor_linear(x)
+        # critic_x = self.critic_linear(x)
 
+        # return critic_x, F.softmax(actor_x, dim=1), (hx, cx)
+
+
+        if x.size(0) == self.hidden_size:
+            # print ("YES")
+            x = x.view(-1, x.size(0))
+
+            hx, cx = self.lstm(x, (hx, cx))  #TODO: Can't feed batch to LSTM
+
+
+            self.hx = hx  #TODO: Where should I store these?
+            self.cx = cx
+
+            x = hx
+
+            actor_x = self.actor_linear(x)
+            critic_x = self.critic_linear(x)
+
+            return critic_x, F.softmax(actor_x, dim=1), (hx, cx)
+        else:
+            # print ("NO")
+            for i in range(x.size(0)):
+                inp = x[i]
+                # print ("inp: ", inp)
+                inp = inp.view(-1, inp.size(0))
+
+                hx, cx = self.lstm(inp, (hx, cx))  #TODO: Can't feed batch to LSTM
+
+            # print ("hx_out: ", hx)
+            # print ("cx_out: ", cx)
+
+                self.hx = hx  #TODO: Where should I store these?
+                self.cx = cx
+
+            x = hx
+
+            actor_x = self.actor_linear(x)
+            critic_x = self.critic_linear(x)
+
+            return critic_x, F.softmax(actor_x, dim=1), (hx, cx)
+
+    def clear_hidden_states(self):
+        self.hx = torch.randn((self.hidden_size,), requires_grad=True)
+        self.cx = torch.randn((self.hidden_size,), requires_grad=True)   
 
 
 # class Recurrent_Actor(nn.Module):
@@ -272,29 +343,31 @@ def generate_episode(policy, env, T):
     # states.append(state)
     for i in range(0, T):
         if i == 0:
-            print ("if state: ", state)
-            value, logit, (hx, cx) = policy((Variable(torch.from_numpy(state).float()), (env.hx, env.cx)))  #TODO
+            # print ("if state: ", state)
+            value, logit, (hx, cx) = policy((Variable(torch.from_numpy(state).float()), (policy.hx, policy.cx)))  #TODO
         else:
-            print ("state: ", state)
-            value, logit, (hx, cx) = policy((Variable(state), (env.hx, env.cx)))  #TODO
-        prob = F.softmax(logit, dim=1)
+            # print ("state: ", state)
+            value, logit, (hx, cx) = policy((Variable(state), (policy.hx, policy.cx)))  #TODO
+        # prob = F.softmax(logit, dim=1)
+        # print ("prob: ", prob)
         log_prob = F.log_softmax(logit, dim=1)
-        entropy = -(log_prob * prob).sum(1)
-        action = prob.multinomial(1).data
+        # print ("log_prob: ", log_prob)
+        entropy = -(log_prob * logit).sum(1)
+        action = logit.multinomial(1).data
         log_prob = log_prob.gather(1, Variable(action))
         state, reward = env.step(action) #TODO: maybe numpy
-        print ("latest state: ", state)
-        state = torch.from_numpy(np.array(state)).float()
+        # print ("latest state: ", state)
+        state = Variable(torch.from_numpy(np.array(state)).float())
         states.append(state)
         values.append(value)
         actions.append(action)
         rewards.append(reward)
         entropies.append(entropy)
         log_probs.append(log_prob)
-        env.hx, env.cx = Variable(hx.data), Variable(cx.data)
+        # env.hx, env.cx = Variable(hx.data), Variable(cx.data)
         if reward == 100:
             break
-    return env, states, values, actions, rewards, entropies, log_probs
+    return env, states, actions, rewards, values, entropies, log_probs
 
 
 def norm_col_init(weights, std=1.0):

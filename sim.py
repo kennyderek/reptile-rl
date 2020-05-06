@@ -13,11 +13,11 @@ class MazeSimulator:
         
         self.maze = []
 
-        self.num_row = 4#16
-        self.num_col = 4#9
+        self.num_row = 16
+        self.num_col = 9
 
-        self.hx = torch.zeros(1, 300)
-        self.cx = torch.zeros(1, 300)
+        # self.hx = torch.zeros(1, 300)
+        # self.cx = torch.zeros(1, 300)
 
         self.agent_x = 1
         self.agent_y = 1
@@ -138,17 +138,21 @@ class MazeSimulator:
             penalty = self.wall_penalty
 
         if self.maze[self.agent_y][self.agent_x] == 'G':
-            return self.get_state(), 100
+            # print ("GOAL")
+            return self.state_rep_func(self.agent_x, self.agent_y), 100 #self.get_state(), 100
         else:
+            # print ("NOT GOAL")
             if self.reward == "distance":
-                return self.get_state(), penalty-((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2)
+                # print ("state: ", self.get_state())
+                return self.state_rep_func(self.agent_x, self.agent_y), penalty-((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2) #self.get_state(), penalty-((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2)
             elif self.reward == "constant":
-                return self.get_state(), penalty-1
+                return self.state_rep_func(self.agent_x, self.agent_y), penalty-1
 
     def get_state(self):
         '''
         returns the maze info vector corresponding to the agent's current x, y position
         '''
+        # print ("maze_info: ", self.maze_info)
         if self.maze[self.agent_y][self.agent_x] == 'G':
             return self.maze_info[self.agent_y][self.agent_x]
         else:
@@ -181,8 +185,8 @@ class MazeSimulator:
         '''
 
         heatmap = [[0 for c in range(3*self.num_col)] for r in range(3*self.num_row)]
-        print ("col: ", self.num_col)
-        print ("row: ", self.num_row)
+        # print ("col: ", self.num_col)
+        # print ("row: ", self.num_row)
         offsets = {0: (1, 0), 1: (1, 2), 2: (2, 1), 3: (0, 1)} # x, y offsets for heatmap
         for y in range(1, self.num_row-1):
             for x in range(1, self.num_col-1):
@@ -194,13 +198,13 @@ class MazeSimulator:
                     # get action probs at this state
                     tensor = torch.from_numpy(np.array(self.state_rep_func(x, y))).float()
                     # print ("tensor: ", tensor)
-                    action_probs = policy((Variable(tensor), (self.hx, self.cx)))
+                    _, action_probs, _ = policy((Variable(tensor), (policy.hx, policy.cx)))
+                    print ("action_probs: ", action_probs[0].detach().numpy())
                     for a in [0, 1, 2, 3]: # action space
                         x_loc = upper_left[0] + offsets[a][0]
                         y_loc = upper_left[1] + offsets[a][1]
-                        # print ("action_probs: ", action_probs[0].detach().numpy())
-                        # print ((x_loc, y_loc), action_probs[0].detach().numpy()[0][a])
-                        heatmap[y_loc][x_loc] = action_probs[0].detach().numpy()[0][a]
+                        # print ((y_loc, x_loc, 0), action_probs[0].detach().numpy()[a])
+                        heatmap[y_loc][x_loc] = action_probs[0].detach().numpy()[a]
 
 
         plt.imshow(np.array(heatmap), cmap='Blues', interpolation='nearest')
@@ -219,10 +223,10 @@ class MazeSimulator:
                     heatmap[y][x] = 0
                 else:
                     tensor = torch.from_numpy(np.array(self.state_rep_func(x, y))).float()
-                    print ("tensor: ", tensor)
-                    value = np.sum(critic((Variable(tensor), (self.hx, self.cx)))[1].detach().numpy())
-                    print ((y, x), value)
-                    heatmap[y][x] = value #.item()
+                    # print ("tensor: ", tensor)
+                    value, _, _ = critic((Variable(tensor), (critic.hx, critic.cx)))#[1].detach().numpy()
+                    print ("value ", (y, x), value[0].detach().numpy()[0])
+                    heatmap[y][x] = value[0].detach().numpy()[0] #.item()
 
         plt.imshow(np.array(heatmap), cmap='Blues', interpolation='nearest')
         plt.savefig(savefile)

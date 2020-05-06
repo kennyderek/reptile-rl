@@ -32,8 +32,8 @@ class A2C(nn.Module):
         self.state_input_size = state_input_size
         self.action_space_size = action_space_size
 
-        print ("\nstate_input_size: ", self.state_input_size)
-        print ("\naction_space_size: ", self.action_space_size)
+        # print ("\nstate_input_size: ", self.state_input_size)
+        # print ("\naction_space_size: ", self.action_space_size)
 
         self.ppo = ppo
 
@@ -123,7 +123,7 @@ class A2C(nn.Module):
 
     In our evaluation, we compare adaptation to a new task with up to 4 gradient updates, each with 40 samples.
     '''
-    def train(self, env, num_batches = 1, batch_size = 20, horizon = 100, batch_envs=None):
+    def train(self, env, num_batches = 1, batch_size = 2, horizon = 100, batch_envs=None):
         '''
         Train using batch_size samples of complete trajectories, num_batches times (so num_batches gradient updates)
         
@@ -154,7 +154,7 @@ class A2C(nn.Module):
 
             R = torch.zeros(1,1)
             if rewards[-1] != 0:
-                value, _, _ = self.policy((Variable(states[-1]), (env.hx, env.cx)))
+                value, _, _ = self.policy((Variable(states[-1]), (self.policy.hx, self.policy.cx)))
                 R = value.data
 
             values.append(Variable(R))
@@ -180,12 +180,14 @@ class A2C(nn.Module):
 
             self.policy.zero_grad()
             loss = (policy_loss + 0.5*value_loss).mean()
-            print ("loss: ", loss)
+            # print ("loss: ", loss)
             loss.backward()
             # ensure_shared_grads(self.policy, shared_model)
             self.optimizer.step()
 
             cumulative_rewards.append(sum(rewards)/batch_size)
+
+            self.policy.clear_hidden_states()
 
         world.visualize(model.policy)#, savefile="Heatmap%s" % batch)
         world.visualize_value(model.policy)#, savefile="Valuemap%s" % batch)
@@ -251,7 +253,7 @@ maze = [["W", "W", "W", "W"],
 world = MazeSimulator(
                 goal_X=2,
                 goal_Y=2,
-                reward_type="distance",
+                reward_type="constant",
                 state_rep="fullboard",
                 maze=maze,
                 wall_penalty=0,
