@@ -22,7 +22,7 @@ import math
 
 class REINFORCE(nn.Module):
 
-    def __init__(self, state_input_size, action_space_size, seed, lr, num_inner_loops, use_opt=False, ppo=False, ppo_epsilon=0.2):
+    def __init__(self, state_input_size, action_space_size, seed, lr, use_opt=False, ppo=False, ppo_epsilon=0.2):
         super(REINFORCE, self).__init__()
 
         torch.manual_seed(seed)
@@ -38,8 +38,6 @@ class REINFORCE(nn.Module):
 
         self.ppo = ppo
         self.ppo_epsilon = ppo_epsilon
-
-        self.num_inner_loops = num_inner_loops
 
         self.use_opt = use_opt
         if use_opt:
@@ -163,7 +161,7 @@ class REINFORCE(nn.Module):
 
     In our evaluation, we compare adaptation to a new task with up to 4 gradient updates, each with 40 samples.
     '''
-    def train(self, env, num_batches = 1, batch_size = 20, horizon = 100, batch_envs=None):
+    def train(self, env, num_batches = 1, batch_size = 20, num_mini_batches=5, horizon = 100, batch_envs=None):
         '''
         Train using batch_size samples of complete trajectories, num_batches times (so num_batches gradient updates)
         
@@ -250,7 +248,6 @@ class REINFORCE(nn.Module):
                 return self.ppo_epsilon + (1 - batch/batch_size)**2*1.8
 
             # lets do minibatches
-            num_mini_batches = 4
             slice_len = len(batch_states) // num_mini_batches
             for m in range(0, num_mini_batches):
                 indices = slices[m*slice_len:(m+1)*slice_len]

@@ -57,26 +57,13 @@ if __name__ == "__main__":
 
     print(world)
 
-    use_optimizer = True
-    batch_size = 10
-    if not use_optimizer:
-        # this route is faster and cooler b/c we have more control
-        model = REINFORCE(world.state_size, world.num_actions,
-                    seed=1,
-                    lr=0.5,
-                    num_inner_loops=5,
-                    use_opt=False,
-                    ppo=True)
-        rewards, losses = model.train(world, num_batches=200, batch_size=batch_size, horizon=100)
-    else:
-        model = REINFORCE(world.state_size, world.num_actions,
-                    seed=1,
-                    lr=3e-4,
-                    num_inner_loops=1,
-                    use_opt=True,
-                    ppo=True,
-                    ppo_epsilon=0.02) # apparently openai suggests 0.2
-        rewards, losses = model.train(world, num_batches=200, batch_size=batch_size, horizon=100)
+    model = REINFORCE(world.state_size, world.num_actions,
+                seed=1,
+                lr=3e-4,
+                use_opt=True,
+                ppo=True,
+                ppo_epsilon=0.02) # apparently openai suggests 0.2
+    rewards, losses = model.train(world, num_batches=200, num_mini_batches=2, batch_size=10, horizon=100)
 
 
     world.visualize(model.policy)

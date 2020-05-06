@@ -1,5 +1,5 @@
 
-from A2C_PPO import A2C
+from reinforce import REINFORCE
 from sim import MazeSimulator
 import matplotlib.pyplot as plt
 import random
@@ -22,7 +22,6 @@ def update_init_params(target, old, step_size = 0.1):
 
 def train_reptile(model, sampler, num_meta_batches, meta_lr = 0.1):
     init_params_policy = deepcopy(OrderedDict(model.policy.named_parameters()))
-    init_params_critic = deepcopy(OrderedDict(model.critic.named_parameters()))
 
     rewards_q_idx = 0
     rewards_q = [-9999999] * 5
@@ -34,12 +33,13 @@ def train_reptile(model, sampler, num_meta_batches, meta_lr = 0.1):
         # we have to be careful about aliasing here, but since update_init_params
         # returns a new copy, we don't need to deepcopy before entering the params into the model
         model.policy.load_state_dict(init_params_policy)
-        model.critic.load_state_dict(init_params_critic)
 
         # update the policy for 4 steps
-        # since the model is not using an optimizer, we don't have to worry about information leakage
+        # we reset the optimizer so we don't have to worry about information leakage
         # between batches. See the paper for more details
-        rewards = model.train(sample(), num_batches=4, batch_size=1, horizon=100)
+        model.init_optimizers()
+
+        rewards, losses = model.train(world, num_batches=4, batch_size=5, num_mini_batches=1, horizon=100)
         # print("Rewards:", sum(rewards))
         cumulative_reward = sum(rewards)
         total_rewards.append(cumulative_reward)
@@ -53,14 +53,11 @@ def train_reptile(model, sampler, num_meta_batches, meta_lr = 0.1):
 
         # get the policies new parameters
         target_policy = OrderedDict(model.policy.named_parameters())
-        target_critic = OrderedDict(model.critic.named_parameters())
 
         init_params_policy = update_init_params(target_policy, init_params_policy, meta_lr)
-        init_params_critic = update_init_params(target_critic, init_params_critic, meta_lr)
     
     
     model.policy.load_state_dict(init_params_policy)
-    model.critic.load_state_dict(init_params_critic)
     return model, total_rewards
 
 maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
@@ -99,7 +96,11 @@ if __name__ == "__main__":
                         wall_penalty=0,
                         normalize_state=True
                     )
-        model = A2C(world.state_size, world.num_actions, seed=1, lr=0.1, use_opt=False, ppo=False)
+        model = REINFORCE(world.state_size, world.num_actions,
+                    seed=1,
+                    lr=0.5,
+                    use_opt=True,
+                    ppo=True)
 
         def sample():
             maze_instance = deepcopy(maze)
