@@ -15,6 +15,10 @@ if __name__ == "__main__":
     Normalize state: scales the x, y coordinates to be variance of 1 and mean of 0, assuming uniform distribution
     '''
 
+    f = open("goal_locations.log", "r+")
+    f.truncate(0)
+    f.close()
+
     maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
