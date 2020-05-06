@@ -20,6 +20,8 @@ import copy
 from collections import OrderedDict
 
 
+
+
 class A2C(nn.Module):
 
     def __init__(self, state_input_size, action_space_size, seed, lr, lr_critic, use_opt=False, ppo=False):
@@ -33,93 +35,23 @@ class A2C(nn.Module):
         print ("\nstate_input_size: ", self.state_input_size)
         print ("\naction_space_size: ", self.action_space_size)
 
-        self.critic = Critic(state_input_size, 1)
-
-        # self.policy = Actor(state_input_size, action_space_size)
-
-        self.policy = Recurrent_Actor(state_input_size, action_space_size)
-        self.optimizer = optim.Adam(self.critic.parameters(), lr=lr_critic)
-
-        self.lr = lr
-        self.lr_critic = lr_critic
-
         self.ppo = ppo
 
-        self.use_opt = use_opt
-        if use_opt:
-            self.init_optimizers()
-        else:
-            for param in self.policy.parameters():
-                param.requires_grad = True
-            # for param in self.critic.parameters():
-            #     param.requires_grad = True
-            self.opt_c = optim.Adam(self.critic.parameters(), lr=self.lr_critic)
+        self.policy = LSTMActorCriticModel(self.state_input_size, self.action_space_size)
 
-        self.old_policy = Actor(state_input_size, action_space_size)
+        self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)  #TODO: What is amsgrad
 
-    def init_optimizers(self):
-        self.opt_a = optim.Adam(self.policy.parameters(), lr=self.lr)
-        self.opt_c = optim.Adam(self.critic.parameters(), lr=self.lr_critic)
+        #state
 
-    def compute_loss(self, state, action, weights):
-        '''
-        weights is what to multiply the log probability by
-        '''
-        if self.ppo:
-            logp_ratios =  Categorical(self.policy(state)).log_prob(action) - Categorical(self.old_policy(state)).log_prob(action)
-            ratios = torch.exp(logp_ratios)
-            clipped_adv = torch.clamp(ratios, 1 - 0.02, 1 + 0.02) * weights
-            non_clipped_adv = ratios * weights
-            # theoretically, big = good too keep this from converging too quickly,
-            # so we encourage by adding to the thing we are trying to maximize
-            # entropy_loss = Categorical(self.policy(state)).entropy()
-            return -(torch.min(clipped_adv, non_clipped_adv)).mean(), None
-        else:
-            ratios =  Categorical(self.policy(state)).log_prob(action)
-            # entropy =  Categorical(self.policy(state)).log_prob(action)
-            loss = ratios * weights
-            # print("policy loss:", loss.mean())
-            return_tensor = torch.Tensor([loss.mean()])
-            return_tensor.requires_grad_()
-            return return_tensor, None
-            #return -(loss.mean()), None
+        #Generate environment
+        #Generate_epsiode --> "action_train" for each step
+        #Keep track of reward at each step
+        #Get the reward from the episode
 
-    def compute_critic_loss(self, state, weights):
-        '''
-        weights is what to multiply the log probability by
-        '''
-        loss = -self.critic(state)*weights
-        # print("critic loss:", loss.mean())
-        return loss.mean()
-    
-    def normalize_advantages(self, advantages):
-        '''
-        instead scale advantages between 0 and 1?
-        '''
-        advantages = np.array(advantages)
-        std = np.std(advantages)
-        mean = advantages.mean()
-        if std != 0:
-            advantages = (advantages - mean) / std  
-        return advantages
+        #Find policy loss
+        #Update parameters (via optimizer)
 
-    def update_params(self, params, loss, step_size=0.1):
-        """
-        Apply one step of gradient descent on the loss function `loss`, with 
-        step-size `step_size`, and returns the updated parameters of the neural 
-        network.
-        """
-        # params = OrderedDict(self.policy.named_parameters())
 
-        grads = torch.autograd.grad(loss, params.values(), create_graph=False, allow_unused=True)
-
-        for (name, param), grad in zip(params.items(), grads):
-            if grad == None:
-                grad = 0.0
-            params[name] = param - step_size * grad
-
-        # self.policy.load_state_dict(params)
-        return params
 
 
     def __step(self, env, horizon):
@@ -130,53 +62,55 @@ class A2C(nn.Module):
 
         # number of steps to take in this environment
         if self.ppo:
-            S, A, R, episode = generate_episode(self.old_policy, env, horizon)
+            env, states, values, actions, rewards, entropie, log_probs = generate_episode(self.old_policy, env, horizon)
         else:
-            S, A, R, episode = generate_episode(self.policy, env, horizon)
-        Rn = self.normalize_advantages(R)
+            env, states, values, actions, rewards, entropies, log_probs = generate_episode(self.policy, env, horizon)
+        # Rn = self.normalize_advantages(R)
 
-        traj_len = len(A)
+        return env, states, values, actions, rewards, entropies, log_probs
 
-        # discounted_rewards = [0] * traj_len
-        # reward_tplusone = 0
-        # compute discounted rewards
-        # for t in reversed(list(range(traj_len))):
-        #     discounted_rewards[t] = R[t] + lam * reward_tplusone
-        #     reward_tplusone = discounted_rewards[t]
+        # traj_len = len(A)
 
-        # compute advantage (of that action)
-        td_err = [0]*traj_len
-        adv = [0]*traj_len
-        for t in range(traj_len):
-            '''
-            The commented out method may/may not be better, all it does is help propagate reward
-            farther up the chain
-            '''
-            # k = traj_len-t
-            # if S[t+k] == None:
-            #     advantages[t] = sum([R[t+i]*lam**(i) for i in range(0, k)]) - self.critic(S[t])
-            # else:
-            #     advantages[t] = sum([R[t+i]*lam**(i) for i in range(k)]) + lam**k*self.critic(S[t+k]) - self.critic(S[t])
-            if S[t+1] == None:
-                td_err[t] = Rn[t] - self.critic(S[t]).item()
-                adv[t] = Rn[t] - self.critic(S[t]).item()
-            else:
-                td_err[t] = Rn[t] + (lam*self.critic(S[t+1]) - self.critic(S[t])).item()
-                adv[t] = Rn[t] - self.critic(S[t]).item()
+        # # discounted_rewards = [0] * traj_len
+        # # reward_tplusone = 0
+        # # compute discounted rewards
+        # # for t in reversed(list(range(traj_len))):
+        # #     discounted_rewards[t] = R[t] + lam * reward_tplusone
+        # #     reward_tplusone = discounted_rewards[t]
+
+        # # compute advantage (of that action)
+        # td_err = [0]*traj_len
+        # adv = [0]*traj_len
+        # for t in range(traj_len):
+        #     '''
+        #     The commented out method may/may not be better, all it does is help propagate reward
+        #     farther up the chain
+        #     '''
+        #     # k = traj_len-t
+        #     # if S[t+k] == None:
+        #     #     advantages[t] = sum([R[t+i]*lam**(i) for i in range(0, k)]) - self.critic(S[t])
+        #     # else:
+        #     #     advantages[t] = sum([R[t+i]*lam**(i) for i in range(k)]) + lam**k*self.critic(S[t+k]) - self.critic(S[t])
+        #     if S[t+1] == None:
+        #         td_err[t] = Rn[t] - self.critic(S[t]).item()
+        #         adv[t] = Rn[t] - self.critic(S[t]).item()
+        #     else:
+        #         td_err[t] = Rn[t] + (lam*self.critic(S[t+1]) - self.critic(S[t])).item()
+        #         adv[t] = Rn[t] - self.critic(S[t]).item()
         
-        mini_batch_states = []
-        mini_batch_actions = []
-        mini_batch_td = []
-        mini_batch_adv = []
-        mini_batch_rewards = []
-        for t in range(traj_len):
-            mini_batch_states.append(S[t].data.numpy())
-            mini_batch_actions.append(A[t])
-            mini_batch_td.append(td_err[t])
-            mini_batch_adv.append(adv[t])
-            mini_batch_rewards.append(R[t])
+        # mini_batch_states = []
+        # mini_batch_actions = []
+        # mini_batch_td = []
+        # mini_batch_adv = []
+        # mini_batch_rewards = []
+        # for t in range(traj_len):
+        #     mini_batch_states.append(S[t].data.numpy())
+        #     mini_batch_actions.append(A[t])
+        #     mini_batch_td.append(td_err[t])
+        #     mini_batch_adv.append(adv[t])
+        #     mini_batch_rewards.append(R[t])
 
-        return env, mini_batch_states, mini_batch_actions, mini_batch_td, mini_batch_adv, mini_batch_rewards, episode
+        # return env, mini_batch_states, mini_batch_actions, mini_batch_td, mini_batch_adv, mini_batch_rewards, episode
 
     '''
     For 2D Maze nav task:
@@ -196,6 +130,16 @@ class A2C(nn.Module):
         A trajectory is defined as a State, Action, Reward secquence of t steps,
             where t = min(the number of steps to reach the goal, horizon)
         '''
+
+        #Generate environment
+        #Generate_epsiode --> "action_train" for each step
+        #Keep track of reward at each step
+        #Get the reward from the episode
+
+        #Find policy loss
+        #Update parameters (via optimizer)
+
+
         cumulative_rewards = []
         if self.ppo:
             self.old_policy.load_state_dict(copy.deepcopy(self.policy.state_dict()))
@@ -203,133 +147,124 @@ class A2C(nn.Module):
         print ("\nnum_batches: ", num_batches)
         print ("\nbatch_size: ", batch_size)
 
-        for batch in tqdm(range(num_batches)):
+        for batch in tqdm(range(num_batches)):  #TODO: implement batches
 
-            if batch_envs == None:
-                parallel_envs = [env.generate_fresh() for _ in range(batch_size)]
-            else:
-                assert len(batch_envs) == batch_size, "supplied envs must match "
+            env = env.generate_fresh()
+            env, states, values, actions, rewards, entropies, log_probs = self.__step(env, horizon)
 
-            batch_states = []
-            batch_actions = []
-            batch_td = []
-            batch_adv = []
-            batch_rewards = []
+            R = torch.zeros(1,1)
+            if rewards[-1] != 0:
+                value, _, _ = self.policy((Variable(states[-1]), (env.hx, env.cx)))
+                R = value.data
 
-            q = mp.Queue()
-            def multi_process(self, env, horizon, q, done):
-                env, s, a, td, adv, r, episode = self.__step(env, horizon)
-                q.put((s, a, td, adv, r))
-                done.wait()
+            values.append(Variable(R))
+            policy_loss = 0
+            value_loss = 0
+            gae = torch.zeros(1,1)
+            R = Variable(R)
 
-            done = mp.Event()
+            gamma = 0.9
+            tau = 1  #TODO: figure out what this should be
 
-            num_processes = batch_size
-            self.share_memory()
+            for i in reversed(range(len(rewards))):
+                R = gamma*R + rewards[i]
+                advantage = R - values[i]
+                value_loss = value_loss + 0.5*advantage.pow(2)
 
-            print ("\nnum_processes: ", num_processes)
+                #Generalized Advantage Estimation
+                delta_t = rewards[i] + gamma*values[i+1].data - values[i].data
 
-            processes = []
-            for rank in range(num_processes):
-                p = mp.Process(target=multi_process, args=(self, parallel_envs[rank], horizon, q, done))
-                p.start()
-                processes.append(p)
+                gae = gae*gamma*tau + delta_t
 
-            for i in range(num_processes):
-                (s, a, td, adv, r) = q.get()
-                batch_states.extend(s)
-                batch_actions.extend(a)
-                batch_td.extend(td)
-                batch_adv.extend(adv)
-                batch_rewards.extend(r)
-            
-            done.set()
-            for p in processes:
-                p.join()
+                policy_loss = policy_loss - log_probs[i]*Variable(gae)-0.01*entropies[i]
 
-            print ("\nDONE HERE")
-            
-            # batch_td = self.normalize_advantages(batch_td)
-            cumulative_rewards.append(sum(batch_rewards)/batch_size)
+            self.policy.zero_grad()
+            loss = (policy_loss + 0.5*value_loss).mean()
+            print ("loss: ", loss)
+            loss.backward()
+            # ensure_shared_grads(self.policy, shared_model)
+            self.optimizer.step()
 
-            batch_actor_loss, batch_entropy_loss = self.compute_loss(
-                                    state=torch.as_tensor(batch_states, dtype=torch.float32),
-                                    action=torch.as_tensor(batch_actions, dtype=torch.float32),
-                                    weights=torch.as_tensor(batch_adv, dtype=torch.float32))
+            cumulative_rewards.append(sum(rewards)/batch_size)
 
-            print ("\n ACTOR LOSS")
-            
-            batch_critic_loss = self.compute_critic_loss(
-                                    state=torch.as_tensor(batch_states, dtype=torch.float32),
-                                    weights=torch.as_tensor(batch_td, dtype=torch.float32))
-
-            if self.ppo:
-                # we make a copy of the current policy to use as the "old" policy in the next iteration
-                temp_state_dict = copy.deepcopy(self.policy.state_dict())
-
-            # update new policy
-            if self.use_opt:
-                self.opt_a.zero_grad()
-                batch_actor_loss.backward()
-                self.opt_a.step()
-
-                self.opt_c.zero_grad()
-                batch_critic_loss.backward()
-                self.opt_c.step()
-            else:
-                # call update params manually, without fancy adaptive stuff
-                params = OrderedDict(self.policy.named_parameters())
-                print ("\nparams: ", params)
-                self.update_params(params, batch_actor_loss, step_size = self.lr)
-                # self.policy.reward_episode = batch_rewards
-                # self.update_policy()
-                # self.policy.load_state_dict(params)
-
-                # params = OrderedDict(self.critic.named_parameters())
-                # self.update_params(params, batch_critic_loss, step_size = self.lr_critic)
-                # self.critic.load_state_dict(params)
-                self.opt_c.zero_grad()
-                batch_critic_loss.backward()
-                self.opt_c.step()
-
-            if self.ppo:
-                # update old policy to the previous new policy
-                self.old_policy.load_state_dict(temp_state_dict)
-
-            if batch % 10 == 0:
-                print(cumulative_rewards[-1])
+        world.visualize(model.policy)#, savefile="Heatmap%s" % batch)
+        world.visualize_value(model.policy)#, savefile="Valuemap%s" % batch)
+    
 
         return cumulative_rewards
 
-    #For recurrent policy
-    def update_policy(self):
-        R = 0
-        rewards = []
+    # #For recurrent policy
+    # def update_policy(self):
+    #     R = 0
+    #     rewards = []
 
-        #Discount future rewards back to the present using gamma
-        for r in reversed(self.policy.reward_episode):
-            R = r + self.policy.gamma * R
-            rewards.insert(0, R)
+    #     #Discount future rewards back to the present using gamma
+    #     for r in reversed(self.policy.reward_episode):
+    #         R = r + self.policy.gamma * R
+    #         rewards.insert(0, R)
 
-        #Scale rewards
-        rewards = torch.FloatTensor(rewards)
+    #     #Scale rewards
+    #     rewards = torch.FloatTensor(rewards)
         
-        #Normalize rewards
-        rewards = (rewards - rewards.mean()) / (rewards.std()) #+ float(np.info(np.float32).eps))
+    #     #Normalize rewards
+    #     rewards = (rewards - rewards.mean()) / (rewards.std()) #+ float(np.info(np.float32).eps))
 
-        #Calculate loss
-        policy_history = torch.stack(self.policy.policy_history)
-        # print ("HERE: ", policy_history)
-        loss = (torch.mul(self.policy_history, rewards).mul(-1), -1)  #TODO
+    #     #Calculate loss
+    #     policy_history = torch.stack(self.policy.policy_history)
+    #     # print ("HERE: ", policy_history)
+    #     loss = (torch.mul(self.policy_history, rewards).mul(-1), -1)  #TODO
 
-        #Update network weights
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
+    #     #Update network weights
+    #     self.optimizer.zero_grad()
+    #     loss.backward()
+    #     self.optimizer.step()
 
-        #Save and initialize episode history counters
-        self.policy.loss_history.append(loss.data[0])
-        self.policy.reward_history.append(np.sum(policy.reward_episode))
-        self.policy.policy_history.append(self.policy.named_parameters())
-        self.policy.reset_episode()
+    #     #Save and initialize episode history counters
+    #     self.policy.loss_history.append(loss.data[0])
+    #     self.policy.reward_history.append(np.sum(policy.reward_episode))
+    #     self.policy.policy_history.append(self.policy.named_parameters())
+    #     self.policy.reset_episode()
+
+maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
+        ["W", " ", "G", " ", " ", " ", " ", " ", "W"],
+        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+        ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
+
+
+maze = [["W", "W", "W", "W"],
+        ["W", " ", " ", "W"],
+        ["W", " ", "G", "W"],
+        ["W", "W", "W", "W"]]
+
+world = MazeSimulator(
+                goal_X=2,
+                goal_Y=2,
+                reward_type="distance",
+                state_rep="fullboard",
+                maze=maze,
+                wall_penalty=0,
+                normalize_state=True
+            )
+model = A2C(world.state_size, world.num_actions, seed=1, lr=0.1, lr_critic=0.1, use_opt=False, ppo=False)
+
+rewards = model.train(world)
+
+print ("rewards: ", rewards)
+plt.plot(list(range(len(rewards))), rewards)
+plt.savefig("RNNRewards")
+
+world.visualize(model.policy)
+world.visualize_value(model.policy)
 

@@ -4,6 +4,8 @@ from random import random
 import matplotlib.pyplot as plt
 import torch
 import numpy as np
+from torch.autograd import Variable
+
 
 class MazeSimulator:
 
@@ -11,8 +13,11 @@ class MazeSimulator:
         
         self.maze = []
 
-        self.num_row = 16
-        self.num_col = 9
+        self.num_row = 4#16
+        self.num_col = 4#9
+
+        self.hx = torch.zeros(1, 300)
+        self.cx = torch.zeros(1, 300)
 
         self.agent_x = 1
         self.agent_y = 1
@@ -133,7 +138,7 @@ class MazeSimulator:
             penalty = self.wall_penalty
 
         if self.maze[self.agent_y][self.agent_x] == 'G':
-            return self.get_state(), 0
+            return self.get_state(), 100
         else:
             if self.reward == "distance":
                 return self.get_state(), penalty-((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2)
@@ -145,7 +150,7 @@ class MazeSimulator:
         returns the maze info vector corresponding to the agent's current x, y position
         '''
         if self.maze[self.agent_y][self.agent_x] == 'G':
-            return None
+            return self.maze_info[self.agent_y][self.agent_x]
         else:
             return self.maze_info[self.agent_y][self.agent_x]
 
@@ -170,12 +175,14 @@ class MazeSimulator:
         # l[y + self.num_row] = 1
         return l
 
-    def visualize(self, policy):
+    def visualize(self, policy, savefile="Heatmap"):
         '''
         Visualize a policy's decisions in a heatmap fashion
         '''
 
         heatmap = [[0 for c in range(3*self.num_col)] for r in range(3*self.num_row)]
+        print ("col: ", self.num_col)
+        print ("row: ", self.num_row)
         offsets = {0: (1, 0), 1: (1, 2), 2: (2, 1), 3: (0, 1)} # x, y offsets for heatmap
         for y in range(1, self.num_row-1):
             for x in range(1, self.num_col-1):
@@ -185,18 +192,22 @@ class MazeSimulator:
                     upper_left = (x * 3, y * 3) # in x, y
 
                     # get action probs at this state
-                    action_probs = policy(torch.as_tensor(self.maze_info[y][x], dtype=torch.float32))
+                    tensor = torch.from_numpy(np.array(self.state_rep_func(x, y))).float()
+                    # print ("tensor: ", tensor)
+                    action_probs = policy((Variable(tensor), (self.hx, self.cx)))
                     for a in [0, 1, 2, 3]: # action space
                         x_loc = upper_left[0] + offsets[a][0]
                         y_loc = upper_left[1] + offsets[a][1]
-                        heatmap[y_loc][x_loc] = action_probs[a].item()
+                        # print ("action_probs: ", action_probs[0].detach().numpy())
+                        # print ((x_loc, y_loc), action_probs[0].detach().numpy()[0][a])
+                        heatmap[y_loc][x_loc] = action_probs[0].detach().numpy()[0][a]
 
 
-        plt.imshow(np.array(heatmap), cmap='PRGn', interpolation='nearest')
-        plt.savefig("Heatmap")
+        plt.imshow(np.array(heatmap), cmap='Blues', interpolation='nearest')
+        plt.savefig(savefile)
         plt.clf()
 
-    def visualize_value(self, critic):
+    def visualize_value(self, critic, savefile="Valuemap"):
         '''
         Visualize the value of each state
         '''
@@ -207,10 +218,14 @@ class MazeSimulator:
                 if self.maze[y][x] == "W":
                     heatmap[y][x] = 0
                 else:
-                    heatmap[y][x] = critic(torch.as_tensor(self.maze_info[y][x], dtype=torch.float32)).item()
+                    tensor = torch.from_numpy(np.array(self.state_rep_func(x, y))).float()
+                    print ("tensor: ", tensor)
+                    value = np.sum(critic((Variable(tensor), (self.hx, self.cx)))[1].detach().numpy())
+                    print ((y, x), value)
+                    heatmap[y][x] = value #.item()
 
-        plt.imshow(np.array(heatmap), cmap='PRGn', interpolation='nearest')
-        plt.savefig("Valuemap")
+        plt.imshow(np.array(heatmap), cmap='Blues', interpolation='nearest')
+        plt.savefig(savefile)
         plt.clf()
 
 
