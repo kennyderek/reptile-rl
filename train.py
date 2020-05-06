@@ -1,5 +1,4 @@
 
-from A2C_PPO import A2C
 from reinforce import REINFORCE
 from sim import MazeSimulator
 import matplotlib.pyplot as plt
@@ -25,7 +24,7 @@ if __name__ == "__main__":
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
             ["W", " ", "W", " ", " ", " ", " ", " ", "W"],
             ["W", " ", "W", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", "W", "W", "W", "W", " ", " ", "W"],
+            ["W", " ", "W", "W", "W", "W", "W", " ", "W"],
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
             ["W", " ", " ", " ", "W", " ", " ", "W", "W"],
             ["W", " ", "W", "W", "W", " ", "W", " ", "W"],
@@ -35,22 +34,22 @@ if __name__ == "__main__":
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
             ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
-    maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
-            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
-            ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
+    # maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
+    #         ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+    #         ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+    #         ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+    #         ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+    #         ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+    #         ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+    #         ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+    #         ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+    #         ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+    #         ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+    #         ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+    #         ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+    #         ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+    #         ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+    #         ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
     
     world = MazeSimulator(goal_X=6, goal_Y=10,
                     reward_type="distance",
@@ -73,13 +72,18 @@ if __name__ == "__main__":
     world.visualize(model.policy)
     world.visualize_value(model.policy.value)
 
-    plt.plot(list(range(len(losses))), [l[0] for l in losses], c='g') # policy
-    plt.plot(list(range(len(losses))), [l[1] for l in losses], c='r') # critic
-    plt.plot(list(range(len(losses))), [l[2] for l in losses], c='b') # entropy
+    plt.plot(list(range(len(losses))), [l[0] for l in losses], c='g', label="Advantages") # policy
+    plt.plot(list(range(len(losses))), [l[2] for l in losses], c='b', label="Entropy") # entropy
+    plt.plot(list(range(len(losses))), [l[1] for l in losses], c='r', label="Critic") # critic
+    leg = plt.legend()
+    plt.xlabel("Batch number")
+    plt.ylabel("Loss")
     plt.savefig("Losses")
     plt.clf()
 
     plt.plot(list(range(len(rewards))), rewards)
+    plt.xlabel("Batch number")
+    plt.ylabel("Reward")
     plt.savefig("Rewards")
     plt.clf()
 
@@ -90,6 +94,8 @@ if __name__ == "__main__":
         goal_found_at.append(val)
     f.truncate(0)
     plt.plot(list(range(len(goal_found_at))), goal_found_at)
+    plt.xlabel("Batch number")
+    plt.ylabel("Num timesteps to goal")
     plt.savefig("GoalIndex.png")
     plt.clf()
 
