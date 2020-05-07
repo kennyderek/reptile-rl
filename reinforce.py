@@ -38,14 +38,12 @@ class REINFORCE(nn.Module):
         self.use_critic = args.use_critic
         self.use_entropy = args.use_entropy
 
+        self.policy = ActorWithHistory(self.state_input_size, self.action_space_size)
+        self.old_policy = ActorWithHistory(self.state_input_size, self.action_space_size)
+
 
         # self.policy = Actor(self.state_input_size, self.action_space_size)
         # self.old_policy = Actor(self.state_input_size, self.action_space_size)
-
-        self.policy = LSTMActorCriticModel(self.state_input_size, self.action_space_size)
-        self.old_policy = LSTMActorCriticModel(self.state_input_size, self.action_space_size)
-
-
         self.init_optimizers()
 
     def init_optimizers(self):
@@ -56,31 +54,24 @@ class REINFORCE(nn.Module):
         weights is what to multiply the log probability by
         '''
         if self.ppo:
-            # print ("hx: ", self.policy.hx)
-            # print ("cx: ", self.policy.cx)
-            _, probs, _ = self.policy((state, (self.policy.hx, self.policy.cx)))
-            # print ("output: ", probs)
-            # print ("Categorical: ", Categorical(probs))
-            _, probs_old, _ = self.old_policy((state, (self.policy.hx, self.policy.cx)))
-            logp_ratios =  Categorical(probs).log_prob(action) - Categorical(probs_old).log_prob(action)
+            logp_ratios =  Categorical(self.policy(state)).log_prob(action) - Categorical(self.old_policy(state)).log_prob(action)
             ratios = torch.exp(logp_ratios)
             clipped_adv = torch.clamp(ratios, 1 - ppo_epsilon, 1 + ppo_epsilon) * weights
             non_clipped_adv = ratios * weights
             # theoretically, big = good too keep this from converging too quickly,
             # so we encourage by adding to the thing we are trying to maximize
             # entropy_loss = Categorical(self.policy(state)).entropy()
-            return -(torch.min(clipped_adv, non_clipped_adv)).sum(), -Categorical(probs).entropy().sum()
+            return -(torch.min(clipped_adv, non_clipped_adv)).sum(), -Categorical(self.policy(state)).entropy().sum()
         else:
-            ratios =  Categorical(self.policy(state.squeeze(0))).log_prob(action)
+            ratios =  Categorical(self.policy(state)).log_prob(action)
             loss = ratios * weights
-            return -(loss.sum()), -Categorical(self.policy((state.squeeze(0), (self.hx, self.cx)))).entropy().sum()
+            return -(loss.sum()), -Categorical(self.policy(state)).entropy().sum()
 
     def compute_critic_loss(self, state, value):
         '''
         weights is what to multiply the log probability by
         '''
-        value_policy, _, _ = self.policy((state, (self.policy.hx, self.policy.cx)))
-        loss = F.smooth_l1_loss(value_policy, value)
+        loss = F.smooth_l1_loss(self.policy.value(state), value)
         return loss.sum()
     
     def normalize_advantages(self, advantages):
@@ -114,9 +105,9 @@ class REINFORCE(nn.Module):
 
         # number of steps to take in this environment
         if self.ppo:
-            env, S, A, R, values, entropies, log_probs = generate_episode(self.old_policy, env, horizon)
+            S, A, R = generate_episode_with_history(self.old_policy, env, horizon)
         else:
-            env, S, A, R, values, entropies, log_probs = generate_episode(self.policy, env, horizon)
+            S, A, R = generate_episode_with_history(self.policy, env, horizon)
 
         traj_len = len(A)
 
@@ -129,8 +120,7 @@ class REINFORCE(nn.Module):
             if not self.use_critic:
                 adv[t] = G
             else:
-                # print ("values[t]: ", values[t])
-                adv[t] = G - values[t].item()#self.policy.value(S[t]).item()
+                adv[t] = G - self.policy.value(S[t]).item()
             critic_target[t] = G
         
         mini_batch_states = []
@@ -138,7 +128,6 @@ class REINFORCE(nn.Module):
         mini_batch_td = []
         mini_batch_adv = []
         mini_batch_rewards = []
-        # print ("S: ", S)
         for t in range(traj_len):
             mini_batch_states.append(S[t].data.numpy())
             mini_batch_actions.append(A[t])
@@ -232,9 +221,7 @@ class REINFORCE(nn.Module):
             slice_len = len(batch_states) // self.args.num_mini_batches
             for m in range(0, self.args.num_mini_batches):
                 indices = slices[m*slice_len:(m+1)*slice_len]
-
-                print ("batch_states: ", batch_states)
-
+                
                 batch_actor_loss, batch_entropy_loss = self.compute_loss(
                                         state=torch.as_tensor(batch_states, dtype=torch.float32)[indices],
                                         action=torch.as_tensor(batch_actions, dtype=torch.float32)[indices],
@@ -263,7 +250,7 @@ class REINFORCE(nn.Module):
                 if m != self.args.num_mini_batches - 1:
                     loss.backward(retain_graph=True)
                 else:
-                    loss.backward(retain_graph=True)
+                    loss.backward()
 
                 if self.args.gradient_clipping:
                     torch.nn.utils.clip_grad_norm_(self.parameters(), 0.5)
@@ -274,9 +261,7 @@ class REINFORCE(nn.Module):
                 # update old policy to the previous new policy
                 self.old_policy.load_state_dict(temp_state_dict)
 
-            # if batch % 10 == 0:
-            #     print("reward: ", cumulative_rewards[-1])
+            if batch % 10 == 0:
+                print(cumulative_rewards[-1])
 
-        # print ("cumulative_rewards: ", cumulative_rewards)
-        # print ("losses: ", losses)
         return cumulative_rewards, losses

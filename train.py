@@ -11,8 +11,8 @@ def make_folder(folder):
         os.makedirs(folder)
 
 def visualize_policy(model, folder):
-    world.visualize(model.policy, os.path.join(folder, "heatmap"))
-    world.visualize_value(model.policy, os.path.join(folder, "valuemap"))
+    # world.visualize(model.policy, os.path.join(folder, "heatmap"))
+    world.visualize_value(model.policy.value, os.path.join(folder, "valuemap"))
 
 def plot_losses(losses, folder):
     if "actor" in losses[0]:
@@ -77,14 +77,13 @@ if __name__ == "__main__":
     Normalize state: scales the x, y coordinates to be variance of 1 and mean of 0, assuming uniform distribution
     '''
     
-    world = MazeSimulator(goal_X=2, goal_Y=2,
+    world = MazeSimulator(goal_X=6, goal_Y=10,
                     reward_type="distance",
                     state_rep="fullboard",
                     maze=maze,
                     wall_penalty=-10,
                     normalize_state=True)
 
-    #6, 10
     class Args():   
         def __init__(self, world):
             # type of model related arguments
@@ -101,9 +100,9 @@ if __name__ == "__main__":
             # training related arguments
             self.gradient_clipping = True
             self.random_perm = True
-            self.num_batches = 1
+            self.num_batches = 300
             self.num_mini_batches = 2
-            self.batch_size = 1
+            self.batch_size = 10
             self.horizon = 100
             self.weight_func = lambda batch_num: (1 - batch_num/self.num_batches)**2
     

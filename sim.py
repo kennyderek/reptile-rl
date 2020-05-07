@@ -4,8 +4,6 @@ from random import random
 import matplotlib.pyplot as plt
 import torch
 import numpy as np
-from torch.autograd import Variable
-
 
 class MazeSimulator:
 
@@ -15,9 +13,6 @@ class MazeSimulator:
 
         self.num_row = 16
         self.num_col = 9
-
-        # self.hx = torch.zeros(1, 300)
-        # self.cx = torch.zeros(1, 300)
 
         self.agent_x = 1
         self.agent_y = 1
@@ -41,7 +36,7 @@ class MazeSimulator:
 
         self.action_space = {0: "N", 1: "S", 2: "E", 3: "W"}
 
-        self.num_actions = 4
+        self.num_actions = len(self.action_space)
         if self.state_rep == "fullboard":
             self.state_size = self.num_row * self.num_col
         elif self.state_rep == "onehot":
@@ -138,23 +133,19 @@ class MazeSimulator:
             penalty = self.wall_penalty
 
         if self.maze[self.agent_y][self.agent_x] == 'G':
-            # print ("GOAL")
-            return self.state_rep_func(self.agent_x, self.agent_y), 100 #self.get_state(), 100
+            return self.get_state(), 0
         else:
-            # print ("NOT GOAL")
             if self.reward == "distance":
-                # print ("state: ", self.get_state())
-                return self.state_rep_func(self.agent_x, self.agent_y), penalty-((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2) #self.get_state(), penalty-((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2)
+                return self.get_state(), penalty-((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2)
             elif self.reward == "constant":
-                return self.state_rep_func(self.agent_x, self.agent_y), penalty-1
+                return self.get_state(), penalty-1
 
     def get_state(self):
         '''
         returns the maze info vector corresponding to the agent's current x, y position
         '''
-        # print ("maze_info: ", self.maze_info)
         if self.maze[self.agent_y][self.agent_x] == 'G':
-            return self.maze_info[self.agent_y][self.agent_x]
+            return None
         else:
             return self.maze_info[self.agent_y][self.agent_x]
 
@@ -179,14 +170,12 @@ class MazeSimulator:
         # l[y + self.num_row] = 1
         return l
 
-    def visualize(self, policy, savefile="Heatmap"):
+    def visualize(self, policy, title):
         '''
         Visualize a policy's decisions in a heatmap fashion
         '''
 
         heatmap = [[0 for c in range(3*self.num_col)] for r in range(3*self.num_row)]
-        # print ("col: ", self.num_col)
-        # print ("row: ", self.num_row)
         offsets = {0: (1, 0), 1: (1, 2), 2: (2, 1), 3: (0, 1)} # x, y offsets for heatmap
         for y in range(1, self.num_row-1):
             for x in range(1, self.num_col-1):
@@ -196,22 +185,18 @@ class MazeSimulator:
                     upper_left = (x * 3, y * 3) # in x, y
 
                     # get action probs at this state
-                    tensor = torch.from_numpy(np.array(self.state_rep_func(x, y))).float()
-                    # print ("tensor: ", tensor)
-                    _, action_probs, _ = policy((Variable(tensor), (policy.hx, policy.cx)))
-                    print ("action_probs: ", action_probs[0].detach().numpy())
+                    action_probs = policy(torch.as_tensor(self.maze_info[y][x], dtype=torch.float32))
                     for a in [0, 1, 2, 3]: # action space
                         x_loc = upper_left[0] + offsets[a][0]
                         y_loc = upper_left[1] + offsets[a][1]
-                        # print ((y_loc, x_loc, 0), action_probs[0].detach().numpy()[a])
-                        heatmap[y_loc][x_loc] = action_probs[0].detach().numpy()[a]
+                        heatmap[y_loc][x_loc] = action_probs[a].item()
 
 
-        plt.imshow(np.array(heatmap), cmap='Blues', interpolation='nearest')
-        plt.savefig(savefile)
+        plt.imshow(np.array(heatmap), cmap='PRGn', interpolation='nearest')
+        plt.savefig(title)
         plt.clf()
 
-    def visualize_value(self, critic, savefile="Valuemap"):
+    def visualize_value(self, critic, title):
         '''
         Visualize the value of each state
         '''
@@ -222,14 +207,11 @@ class MazeSimulator:
                 if self.maze[y][x] == "W":
                     heatmap[y][x] = 0
                 else:
-                    tensor = torch.from_numpy(np.array(self.state_rep_func(x, y))).float()
-                    # print ("tensor: ", tensor)
-                    value, _, _ = critic((Variable(tensor), (critic.hx, critic.cx)))#[1].detach().numpy()
-                    print ("value ", (y, x), value[0].detach().numpy()[0])
-                    heatmap[y][x] = value[0].detach().numpy()[0] #.item()
+                    # print ("tensor: ", torch.from_numpy(np.array([self.maze_info[y][x]])))#, dtype=torch.float32)))
+                    heatmap[y][x] = critic(torch.from_numpy(np.array([self.maze_info[y][x]])).float()).item()
 
-        plt.imshow(np.array(heatmap), cmap='Blues', interpolation='nearest')
-        plt.savefig(savefile)
+        plt.imshow(np.array(heatmap), cmap='PRGn', interpolation='nearest')
+        plt.savefig(title)
         plt.clf()
 
 
@@ -338,10 +320,7 @@ if __name__ == "__main__":
 
 '''
     observation is the current 2D position
-
     reward is negative distance to goal
-
     actions are velocity commands clipped to [-0.1, 0.1]
-
     Horizon is 100, environment ended when agent was within 0.01 of goal
 '''

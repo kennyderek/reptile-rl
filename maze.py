@@ -413,6 +413,3 @@ if __name__ == "__main__":
 	# print (prelim)
 	# print (m.goal.row, m.goal.col)
 	print (m)
-
-
-

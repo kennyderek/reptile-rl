@@ -1,5 +1,3 @@
-
-
 from A2C_PPO import A2C
 from sim import MazeSimulator
 import matplotlib.pyplot as plt
