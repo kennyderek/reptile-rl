@@ -91,7 +91,7 @@ class LSTMActorCriticModel(nn.Module):
 
         # return critic_x, F.softmax(actor_x, dim=1), (hx, cx)
 
-
+        print ("size: ", x.size(0))
         if x.size(0) == self.hidden_size:
             # print ("YES")
             x = x.view(-1, x.size(0))
@@ -109,10 +109,14 @@ class LSTMActorCriticModel(nn.Module):
 
             return critic_x, F.softmax(actor_x, dim=1), (hx, cx)
         else:
-            # print ("NO")
+            print ("NO")
+            # x = x[0]
+            x = x.squeeze(0)
             for i in range(x.size(0)):
                 inp = x[i]
-                # print ("inp: ", inp)
+                print ("x size: ", x.size(0))
+                print ("x: ", x)
+                print ("inp: ", inp.size(0))
                 inp = inp.view(-1, inp.size(0))
 
                 hx, cx = self.lstm(inp, (hx, cx))  #TODO: Can't feed batch to LSTM
@@ -340,7 +344,11 @@ def generate_episode(policy, env, T):
     # S, A, R, episode = [], [], [], []
     states, values, actions, rewards, entropies, log_probs = [], [], [], [], [], []
     state = np.array(env.state_rep_func(env.agent_x, env.agent_y))  #TODO: might need torch.from_numpy.etc
+    # print ("INITIAL STATE: ", state)
     # states.append(state)
+    running_state = state
+    for i in range(0, T+1):
+    	running_state = np.vstack((running_state, np.zeros(len(state))))
     for i in range(0, T):
         if i == 0:
             # print ("if state: ", state)
@@ -357,7 +365,10 @@ def generate_episode(policy, env, T):
         log_prob = log_prob.gather(1, Variable(action))
         state, reward = env.step(action) #TODO: maybe numpy
         # print ("latest state: ", state)
-        state = Variable(torch.from_numpy(np.array(state)).float())
+        # running_state = np.vstack((state, running_state))
+        # print ("running_state: ", running_state)
+        running_state[i] = state
+        state = Variable(torch.from_numpy(running_state).float())
         states.append(state)
         values.append(value)
         actions.append(action)

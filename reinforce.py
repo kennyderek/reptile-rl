@@ -232,7 +232,9 @@ class REINFORCE(nn.Module):
             slice_len = len(batch_states) // self.args.num_mini_batches
             for m in range(0, self.args.num_mini_batches):
                 indices = slices[m*slice_len:(m+1)*slice_len]
-                
+
+                print ("batch_states: ", batch_states)
+
                 batch_actor_loss, batch_entropy_loss = self.compute_loss(
                                         state=torch.as_tensor(batch_states, dtype=torch.float32)[indices],
                                         action=torch.as_tensor(batch_actions, dtype=torch.float32)[indices],

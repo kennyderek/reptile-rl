@@ -101,9 +101,9 @@ if __name__ == "__main__":
             # training related arguments
             self.gradient_clipping = True
             self.random_perm = True
-            self.num_batches = 10
+            self.num_batches = 1
             self.num_mini_batches = 2
-            self.batch_size = 10
+            self.batch_size = 1
             self.horizon = 100
             self.weight_func = lambda batch_num: (1 - batch_num/self.num_batches)**2
     
