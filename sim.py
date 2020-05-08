@@ -207,8 +207,8 @@ class MazeSimulator:
                 if self.maze[y][x] == "W":
                     heatmap[y][x] = 0
                 else:
-                    # print ("tensor: ", torch.from_numpy(np.array([self.maze_info[y][x]])))#, dtype=torch.float32)))
-                    heatmap[y][x] = critic(torch.from_numpy(np.array([self.maze_info[y][x]])).float()).item()
+                    # print ("tensor: ", torch.from_numpy(np.array(self.state_rep_func(y, x))))#, dtype=torch.float32)))
+                    heatmap[y][x] = critic.value(torch.from_numpy(np.array(self.state_rep_func(x, y))).float()).item() #critic.value(torch.from_numpy(np.array([self.maze_info[y][x]])).float()).item()
 
         plt.imshow(np.array(heatmap), cmap='PRGn', interpolation='nearest')
         plt.savefig(title)

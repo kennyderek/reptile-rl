@@ -55,10 +55,10 @@ class Actor(nn.Module):
 
 class ActorWithHistory(nn.Module):
 
-    def __init__(self, state_input_size, action_space_size, history_size=2):
+    def __init__(self, state_input_size, action_space_size, history_size=1):
         super(ActorWithHistory, self).__init__()
 
-        self.history_size = 2
+        self.history_size = history_size
         self.input_size = state_input_size
         self.history_size = self.history_size
         self.action_space_size = action_space_size
@@ -68,7 +68,7 @@ class ActorWithHistory(nn.Module):
         self.hidden_size1 = 300
         self.hidden_size2 = 300
 
-        self.fc1_a = nn.Linear(self.input_size*self.history_size, self.hidden_size)
+        self.fc1_a = nn.Linear(self.input_size*(self.history_size+1), self.hidden_size)
         self.fc1_c = nn.Linear(self.input_size, self.hidden_size)
         self.fc2_a = nn.Linear(self.hidden_size, self.hidden_size1)
         self.fc3_a = nn.Linear(self.hidden_size1, self.hidden_size1)
@@ -87,7 +87,7 @@ class ActorWithHistory(nn.Module):
         '''
 
 
-        if x.size(0) > 2:
+        if x.size(0) > (self.history_size+1):
             x = torch.flatten(x, start_dim=1)
         else:
             x = torch.flatten(x)
@@ -102,16 +102,29 @@ class ActorWithHistory(nn.Module):
 
     def value(self, x):
 
-        if x.size(0) > 2:
+        # print ("x: ", x)
+        # print ("x.size(0): ", x.size(0))
+        # print ("inputs size*history_size: ", self.input_size*(self.history_size+1))
+        # print ("input size: ", self.input_size)
+        # print ("history size: ", self.history_size)
+
+        if x.size(0) == self.input_size:
+            x = x
+        elif x.size(0) > (self.history_size+1):
             #x = torch.flatten(x, start_dim=1)
+            # print ("YES")
             values = x.detach().numpy()
             new_input = []
+            # print ("values: ", values)
+            # print (len(values))
             for inp in values:
                 new_input.append(inp[0])
             x = torch.from_numpy(np.array(new_input))
 
         else:
             x = x[0]
+
+        # print ("X AFTER: ", x)
 
         x = F.relu(self.fc1_c(x))
         x = F.relu(self.fc2_a(x))
@@ -203,24 +216,36 @@ class ActorCritic(nn.Module):
 
         return self.fc6_c(x)
 
-def generate_episode_with_history(policy, env, T, history_length=2):
+def generate_episode_with_history(policy, env, T, history_length=1):
     '''
     return state: list of torch.FloatTensor
            action: list of torch.FloatTensor
            reward: list of floats
     '''
     S, A, R = [], [], []
-    running_state = None
     for i in range(0, T):
-        state = env.get_state() #Variable(torch.FloatTensor(env.get_state()))
+        state = env.state_rep_func(env.agent_x, env.agent_y)#.get_state() #Variable(torch.FloatTensor(env.get_state()))
+        # print ("\nstate: ", state)
         if i == 0:
-            state_pad = np.zeros(len(state))
-            running_state = np.vstack((state, state_pad))
+            running_state = state
+            for j in range(history_length):
+                state_pad = np.zeros(len(state))
+                running_state = np.vstack((running_state, state_pad))
         else:
-            running_state[0] = state
-            running_state[1] = running_state[0].copy()
+            running_state_prev = running_state.copy()
+            running_state = state
+            for j in range(0, history_length):
+                running_state = np.vstack((running_state, running_state_prev[j]))
+            # for j in range(history_length-1, 0, -1):
+            #     upper_row = running_state[j+1]
+            #     running_state[j] = upper_row
+            # running_state[0] = state
+        # print ("\nrunning_state: ", np.array(running_state))
 
-        state_tensor = Variable(torch.from_numpy(running_state).float())
+        # running_state[0] = state
+        # running_state[1] = running_state[0].copy()
+
+        state_tensor = Variable(torch.from_numpy(np.array(running_state)).float())
         # print ("\ni: ", i)
         # print ("running_state: ", running_state)
         # print ("state_tensor: ", state_tensor)

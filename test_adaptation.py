@@ -1,4 +1,5 @@
-from A2C_PPO import A2C
+# from A2C_PPO import A2C
+from reinforce import REINFORCE
 from sim import MazeSimulator
 import matplotlib.pyplot as plt
 import random
@@ -32,8 +33,8 @@ test_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
             ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
 
 if __name__ == "__main__":
-    saved_model = "meta_train_results/best_meta_init_at_iter82.pth"
-    # saved_model = "reptile_model_init.pth"
+    # saved_model = "meta_train_results/best_meta_init_at_iter82.pth"
+    saved_model = "meta_train_results/final_reptile_model_init.pth"
     random.seed(1)
 
     # choose a specific world to adapt the model to
@@ -41,22 +42,60 @@ if __name__ == "__main__":
                 goal_X=6,
                 goal_Y=1,
                 reward_type="distance",
-                state_rep="xy",
+                state_rep="fullboard",
                 maze=test_maze,
                 wall_penalty=0,
                 normalize_state=True)
+    class Args():   
+        def __init__(self, world):
+            # type of model related arguments
+            self.seed = 1
+            self.state_input_size = world.state_size
+            self.action_space_size = world.num_actions
+            self.lr = 3e-4
+            self.ppo = True
+            self.ppo_base_epsilon = 0.1
+            self.ppo_dec_epsilon = 0.1
+            self.use_critic = True
+            self.use_entropy = True
+
+            # training related arguments
+            self.gradient_clipping = True
+            self.random_perm = True
+            self.num_batches = 300
+            self.num_mini_batches = 2
+            self.batch_size = 10
+            self.horizon = 100
+            self.weight_func = lambda batch_num: (1 - batch_num/self.num_batches)**2
+
+    args = Args(world)
+    args.ppo = True
+    args.use_critic = True
+    args.use_entropy = True
+    args.gradient_clipping = False
+    args.ppo_base_epsilon = 0.2
+    args.ppo_dec_epsilon = 0
+
+    # model = REINFORCE(args)
 
     init_params = torch.load(saved_model)
-    model = A2C(world.state_size, world.num_actions, seed=1, lr=0.01, use_opt=False, ppo=False)
+    # model = A2C(world.state_size, world.num_actions, seed=1, lr=0.01, use_opt=False, ppo=False)
+    model = REINFORCE(args)
     model.load_state_dict(init_params)
 
     rewards = []
-    rewards = model.train(world, num_batches=100, batch_size=1, horizon=100)
+    rewards, losses = model.train(world)#, num_batches=100, batch_size=1, horizon=100)
 
     print(rewards)
 
+
+    plt.plot(list(range(len(rewards))), rewards)
+    plt.savefig("TestRewardsOfReptile")
+
+
+
     # world.visualize(model.policy)
-    # world.visualize_value(model.critic)
+    world.visualize_value(model.policy, "TestValuemap")
 
 
     # adapt()

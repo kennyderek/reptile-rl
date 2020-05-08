@@ -68,6 +68,23 @@ maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
         ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
         ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
 
+test_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
+            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
+
 if __name__ == "__main__":
     
     '''
@@ -77,12 +94,12 @@ if __name__ == "__main__":
     Normalize state: scales the x, y coordinates to be variance of 1 and mean of 0, assuming uniform distribution
     '''
     
-    world = MazeSimulator(goal_X=6, goal_Y=10,
+    world = MazeSimulator(goal_X=6, goal_Y=1,
                     reward_type="distance",
                     state_rep="fullboard",
-                    maze=maze,
+                    maze=test_maze,
                     wall_penalty=-10,
-                    normalize_state=True)
+                    normalize_state=True)  #6, 10
 
     class Args():   
         def __init__(self, world):

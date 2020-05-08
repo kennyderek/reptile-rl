@@ -20,7 +20,7 @@ def update_init_params(target, old, step_size = 0.1):
     return updated
 
 def train_reptile(model, sampler, num_meta_batches, meta_lr = 0.1):
-    init_params_policy = deepcopy(OrderedDict(model.policy.named_parameters()))
+    init_params_policy = deepcopy(OrderedDict(model.policy.named_parameters()))  #TODO: Change to no history? variable history?
 
     rewards_q_idx = 0
     rewards_q = [-9999999] * 5
@@ -38,7 +38,7 @@ def train_reptile(model, sampler, num_meta_batches, meta_lr = 0.1):
         # between batches. See the paper for more details
         model.init_optimizers()
 
-        rewards, losses = model.train(world, num_batches=4, batch_size=5, num_mini_batches=1, horizon=100)
+        rewards, losses = model.train(world) # rewards, losses = model.train(world, num_batches=4, batch_size=5, num_mini_batches=1, horizon=100)
         # print("Rewards:", sum(rewards))
         cumulative_reward = sum(rewards)
         total_rewards.append(cumulative_reward)
@@ -90,36 +90,62 @@ if __name__ == "__main__":
                         goal_X=6,
                         goal_Y=1,
                         reward_type="distance",
-                        state_rep="xy",
+                        state_rep="fullboard",
                         maze=maze,
                         wall_penalty=0,
                         normalize_state=True
                     )
-        model = REINFORCE(world.state_size, world.num_actions,
-                    seed=1,
-                    lr=0.5,
-                    use_opt=True,
-                    ppo=True)
+        class Args():   
+            def __init__(self, world):
+                # type of model related arguments
+                self.seed = 1
+                self.state_input_size = world.state_size
+                self.action_space_size = world.num_actions
+                self.lr = 3e-4
+                self.ppo = True
+                self.ppo_base_epsilon = 0.1
+                self.ppo_dec_epsilon = 0.1
+                self.use_critic = True
+                self.use_entropy = True
+
+                # training related arguments
+                self.gradient_clipping = True
+                self.random_perm = True
+                self.num_batches = 300
+                self.num_mini_batches = 2
+                self.batch_size = 10
+                self.horizon = 100
+                self.weight_func = lambda batch_num: (1 - batch_num/self.num_batches)**2
+
+        args = Args(world)
+        args.ppo = True
+        args.use_critic = True
+        args.use_entropy = True
+        args.gradient_clipping = False
+        args.ppo_base_epsilon = 0.2
+        args.ppo_dec_epsilon = 0
+
+        model = REINFORCE(args)
 
         def sample():
             maze_instance = deepcopy(maze)
             y = random.randint(2, 7)
             x = 4
             for j in range(1, y+1):
-                maze_instance[y][x] = "W"
+                maze_instance[j][x] = "W"
             
             return MazeSimulator(goal_X=x,
                         goal_Y=y,
                         reward_type="distance",
-                        state_rep="xy",
+                        state_rep="fullboard",
                         maze=maze_instance,
                         wall_penalty=0,
                         normalize_state=True)
 
-        model_init, rewards = train_reptile(model, sample, 500, meta_lr=0.05)
+        model_init, rewards = train_reptile(model, sample, 10, meta_lr=0.05)
 
-        world.visualize(model_init.policy)
-        world.visualize_value(model_init.critic)
+        # world.visualize(model_init.policy)
+        world.visualize_value(model_init.policy, "Valuemap")#.critic)
 
         plt.plot(list(range(len(rewards))), rewards)
         plt.savefig("RewardsOfReptile")
