@@ -2,15 +2,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions import Categorical
 from torch.autograd import Variable
 import torch.optim as optim
 
 import numpy as np
-from sim import MazeSimulator, ShortCorridor
 
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+# from tqdm import tqdm
 from random import random
 
 from utils import *
@@ -39,9 +37,8 @@ class REINFORCE(nn.Module):
         self.use_critic = args.use_critic
         self.use_entropy = args.use_entropy
 
-
-        self.policy = Actor(self.state_input_size, self.action_space_size)
-        self.old_policy = Actor(self.state_input_size, self.action_space_size)
+        self.policy = args.policy(self.state_input_size, self.action_space_size)
+        self.old_policy = args.policy(self.state_input_size, self.action_space_size)
         self.init_optimizers()
 
     def init_optimizers(self):
@@ -52,18 +49,16 @@ class REINFORCE(nn.Module):
         weights is what to multiply the log probability by
         '''
         if self.ppo:
-            logp_ratios =  Categorical(self.policy(state)).log_prob(action) - Categorical(self.old_policy(state)).log_prob(action)
+            logp_ratios =  self.policy(state).log_prob(action) - self.old_policy(state).log_prob(action)
             ratios = torch.exp(logp_ratios)
             clipped_adv = torch.clamp(ratios, 1 - ppo_epsilon, 1 + ppo_epsilon) * weights
             non_clipped_adv = ratios * weights
-            # theoretically, big = good too keep this from converging too quickly,
-            # so we encourage by adding to the thing we are trying to maximize
-            # entropy_loss = Categorical(self.policy(state)).entropy()
-            return -(torch.min(clipped_adv, non_clipped_adv)).sum(), -Categorical(self.policy(state)).entropy().sum()
+
+            return -(torch.min(clipped_adv, non_clipped_adv)).sum(), -self.policy(state).entropy().sum()
         else:
-            ratios =  Categorical(self.policy(state)).log_prob(action)
+            ratios =  self.policy(state).log_prob(action)
             loss = ratios * weights
-            return -(loss.sum()), -Categorical(self.policy(state)).entropy().sum()
+            return -(loss.sum()), -self.policy(state).entropy().sum()
 
     def compute_critic_loss(self, state, value):
         '''
@@ -103,9 +98,9 @@ class REINFORCE(nn.Module):
 
         # number of steps to take in this environment
         if self.ppo:
-            S, A, R = generate_episode(self.old_policy, env, horizon)
+            S, A, R = generate_episode(self.old_policy, env, horizon, self.args.log_goal_locs)
         else:
-            S, A, R = generate_episode(self.policy, env, horizon)
+            S, A, R = generate_episode(self.policy, env, horizon, self.args.log_goal_locs)
 
         traj_len = len(A)
 
@@ -146,7 +141,7 @@ class REINFORCE(nn.Module):
 
     In our evaluation, we compare adaptation to a new task with up to 4 gradient updates, each with 40 samples.
     '''
-    def train(self, env, batch_envs=None):
+    def train(self, env, sampler=None):
         '''
         Train using batch_size samples of complete trajectories, num_batches times (so num_batches gradient updates)
         
@@ -158,12 +153,12 @@ class REINFORCE(nn.Module):
         if self.ppo:
             self.old_policy.load_state_dict(copy.deepcopy(self.policy.state_dict()))
 
-        for batch in tqdm(range(self.args.num_batches)):
+        for batch in range(self.args.num_batches):
 
-            if batch_envs == None:
+            if sampler == None:
                 parallel_envs = [env.generate_fresh() for _ in range(self.args.batch_size)]
             else:
-                assert len(batch_envs) == self.args.batch_size, "supplied envs must match "
+                parallel_envs = [sampler() for _ in range(self.args.batch_size)]
 
             batch_states = []
             batch_actions = []
@@ -171,36 +166,13 @@ class REINFORCE(nn.Module):
             batch_adv = []
             batch_rewards = []
 
-            q = mp.Queue()
-            def multi_process(self, env, horizon, q, done, rank):
-                torch.manual_seed(rank)
-                env, s, a, td, adv, r = self.__step(env, horizon)
-                q.put((s, a, td, adv, r))
-                done.wait()
-
-            done = mp.Event()
-
-            num_processes = self.args.batch_size
-            self.share_memory()
-
-            processes = []
-            for rank in range(num_processes):
-                p = mp.Process(target=multi_process, args=(self, parallel_envs[rank], self.args.horizon, q, done, rank))
-                p.start()
-                processes.append(p)
-
-            for i in range(num_processes):
-                (s, a, td, adv, r) = q.get()
+            for rank in range(self.args.batch_size):
+                env, s, a, td, adv, r = self.__step(parallel_envs[rank], self.args.horizon)
                 batch_states.extend(s)
                 batch_actions.extend(a)
                 batch_td.extend(td)
                 batch_adv.extend(adv)
                 batch_rewards.extend(r)
-            
-            done.set()
-            for p in processes:
-                p.join()
-            
 
             # we normalize all of the advantages together, considering over all batches
             batch_adv = self.normalize_advantages(batch_adv)

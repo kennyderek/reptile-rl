@@ -44,6 +44,8 @@ class MazeSimulator:
         elif self.state_rep == "xy":
             self.state_size = 2
         
+        self.state_size += 4
+        
         if maze == None:
             self.maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
                         ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
@@ -88,7 +90,7 @@ class MazeSimulator:
                 if self.maze[y][x - 1] == "W":
                     walls[3] = 1
                 
-                self.maze_info[y][x] = self.state_rep_func(x, y)
+                self.maze_info[y][x] = self.state_rep_func(x, y) + walls
 
     def __get_action(self, policy_output):
         return self.action_space[policy_output.item()]
@@ -213,116 +215,143 @@ class MazeSimulator:
         plt.savefig(title)
         plt.clf()
 
-
-
-
-
-
-class ShortCorridor:
+class MazeArgs():
 
     def __init__(self):
+        self.rows = None
+        self.cols = None
+        self.goal = None
+        self.agent = None
 
-        self.agent_x = 0
+class Discrete2D:
+    state_size = 2
+    num_actions = 4
+    control = "discrete"
 
-        self.goal_x = 6
+    def __init__(self, args):
+        self.args = args
 
-        self.reverse_states = [1, 3]
+        self.rows = args.rows
+        self.cols = args.cols
+        self.dims = np.array([self.cols, self.rows])
 
-    def step(self, action):
-        '''
-        action: 'N', 'S', 'E', or 'W' to move on the map
-        return: next_state (vector, or None if terminal), reward (int)
-        '''
-        if action == 'L':
-            if self.agent_x == 0:
-                self.agent_x == self.goal_x
-
-            if self.agent_x in self.reverse_states:
-                self.agent_x += 1 # left goes right
-            else:
-                self.agent_x -= 1
-        elif action == 'R':
-            if self.agent_x in self.reverse_states:
-                self.agent_x -= 1
-            else:
-                self.agent_x += 1
-        
-        if self.agent_x < 0:
-            self.agent_x = 0
-        if self.agent_x > self.goal_x:
-            self.agent_x = self.goal_x
-
-        if self.agent_x == self.goal_x:
-            return None, 0
-        else:
-            return self.get_state(), self.agent_x - self.goal_x
+        self.agent = np.array(args.agent) # list
+        self.goal = np.array(args.goal) # list
 
     def get_state(self):
         '''
-        returns the maze info vector corresponding to the agent's current x, y position
+        ret: list [x, y]
         '''
-        # l = [0, 0, 0, 0, 0]
-        # l[self.agent_x] = 1
-        # return l
-        return [self.agent_x]
+        return list(self.agent/self.dims)
 
-if __name__ == "__main__":
-    # # simple test case
-    # world = WorldSimulator()
-    # world.step('N')
-    # print(world.agent_x, world.agent_y) # the agent should still be at (1, 1) since it hit a wall
-    # world.step('S')
-    # world.step('S')
-    # print(world.get_state()) # in the goal row, so the y goal direction should be zero
-    # for i in range(0, 6):
-    #     print(world.step('E')) # last reward should be 20
-    # print(world.get_state()) # at goal location, so the first two indices should both be zero
+    def step(self, policy_output):
+        '''
+        input: int
+        ret: state (list), reward (int)
+        '''
+        x = self.agent[0]
+        y = self.agent[1]
+        if policy_output == 0:
+            self.agent[0] = min(x+1, self.cols)
+        if policy_output == 1:
+            self.agent[0] = max(x-1, 0)
+
+        if policy_output == 2:
+            self.agent[1] = min(y+1, self.rows)
+        if policy_output == 3:
+            self.agent[1] = max(y-2, 0)
+
+        dist_to_goal = -np.sqrt(np.sum((self.agent - self.goal)**2))
+        if dist_to_goal == 0:
+            return None, 0
+        else:
+            return self.get_state(), dist_to_goal
+    
+    def generate_fresh(self):
+        return Discrete2D(self.args)
+
+class Continuous2D:
+    state_size = 2
+    num_actions = 4
+
+    def __init__(self, args):
+        self.args = args
+
+        # self.dims = np.array([self.cols, self.rows])
+
+        self.agent = np.array(args.agent) # list
+        self.goal = np.array(args.goal) # list
+
+    def get_state(self):
+        '''
+        ret: list [x, y]
+        '''
+        return list(self.agent)
+
+    def step(self, policy_output):
+        '''
+        input: int
+        ret: state (list), reward (int)
+        '''
+        actions = np.array(torch.clamp(policy_output, -0.1, 0.1))
+        self.agent += actions
+
+        dist_to_goal = -np.sqrt(np.sum((self.agent - self.goal)**2))
+        if abs(dist_to_goal) <= 0.01:
+            return None, 0
+        else:
+            return self.get_state(), dist_to_goal
+    
+    def generate_fresh(self):
+        return Continuous2D(self.args)
 
 
 
-    # print("*****")
-    # env = ShortCorridor()
-    # print(env.step("L"), env.agent_x) # -1 (0)
-    # print(env.step("R"), env.agent_x) # -1 (1)
-    # print(env.step("R"), env.agent_x) # -1 (0)
-    # print(env.step("R"), env.agent_x) # -1 (1)
-    # print(env.step("L"), env.agent_x) # -1 (2)
-    # print(env.step("R"), env.agent_x) # None (3)
 
+class Discrete2DMazeFlags:
 
-    mean_rewards = []
-    upper_range = 100
-    for i in range(1, upper_range):
-        epsilon = i/upper_range
+    def __init__(self, args):
+        self.args = args
 
-        num_trials = 600
-        all_rewards = []
-        for n in range(num_trials):
-            state = 0
-            total_reward = 0
-            num_steps = 0
-            env = ShortCorridor()
-            while state != None and num_steps < 50:
-                num_steps += 1
-                if random() < epsilon:
-                    state, reward = env.step('R')
-                else:
-                    state, reward = env.step('L')
-                total_reward += reward
-            all_rewards.append(total_reward)
-        mean_reward = sum(all_rewards)/len(all_rewards)
-        mean_rewards.append(mean_reward)
+        self.rows = args.rows
+        self.cols = args.cols
+        self.dims = np.array([self.cols, self.rows])
 
-    plt.plot(list(range(1, upper_range)), mean_rewards)
-    plt.show()
+        self.agent = np.array(args.agent) # list
+        self.goal = np.array(args.goal) # list
 
+        self.state_size = 4
+        self.num_actions = 4
 
-'''
-    observation is the current 2D position
+    def get_state(self):
+        '''
+        ret: list [x, y]
+        '''
+        direction = (np.zeros(self.agent.shape) + (self.agent > self.goal))
+        return list(self.agent/self.dims) + list(direction)
 
-    reward is negative distance to goal
+    def step(self, policy_output):
+        '''
+        input: int
+        ret: state (list), reward (int)
+        '''
+        x = self.agent[0]
+        y = self.agent[1]
+        if policy_output == 0:
+            self.agent[0] = min(x+1, self.cols)
+        if policy_output == 1:
+            self.agent[0] = max(x-1, 0)
 
-    actions are velocity commands clipped to [-0.1, 0.1]
+        if policy_output == 2:
+            self.agent[1] = min(y+1, self.rows)
+        if policy_output == 3:
+            self.agent[1] = max(y-2, 0)
 
-    Horizon is 100, environment ended when agent was within 0.01 of goal
-'''
+        dist_to_goal = -np.sqrt(np.sum((self.agent - self.goal)**2))
+        if dist_to_goal == 0:
+            return None, 0
+        else:
+            return self.get_state(), dist_to_goal
+    
+    def generate_fresh(self):
+        return Discrete2DMazeFlags(self.args)
