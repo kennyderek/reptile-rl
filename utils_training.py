@@ -3,6 +3,19 @@ import os
 import json
 import torch
 
+
+def update_init_params(target, old, step_size = 0.1):
+    """Apply one step of gradient descent on the loss function `loss`, with 
+    step-size `step_size`, and returns the updated parameters of the neural 
+    network.
+    """
+    updated = OrderedDict()
+    for ((name_old, oldp), (name_target, targetp)) in zip(old.items(), target.items()):
+        assert name_old == name_target, "target and old params are different"
+        updated[name_old] = oldp + step_size * (targetp - oldp) # grad ascent so its a plus
+    return updated
+
+
 def make_folder(folder):
     if not os.path.exists(folder):
         os.makedirs(folder)
