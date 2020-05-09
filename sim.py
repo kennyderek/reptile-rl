@@ -226,7 +226,6 @@ class MazeArgs():
 class Discrete2D:
     state_size = 2
     num_actions = 4
-    control = "discrete"
 
     def __init__(self, args):
         self.args = args
@@ -270,9 +269,11 @@ class Discrete2D:
     def generate_fresh(self):
         return Discrete2D(self.args)
 
+
+
 class Continuous2D:
     state_size = 2
-    num_actions = 4
+    num_actions = 2
 
     def __init__(self, args):
         self.args = args
@@ -304,6 +305,8 @@ class Continuous2D:
     
     def generate_fresh(self):
         return Continuous2D(self.args)
+
+
 
 
 

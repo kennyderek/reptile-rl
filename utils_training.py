@@ -2,7 +2,10 @@ import matplotlib.pyplot as plt
 import os
 import json
 import torch
-
+from collections import OrderedDict
+import numpy as np
+import scipy.stats
+from reinforce import REINFORCE
 
 def update_init_params(target, old, step_size = 0.1):
     """Apply one step of gradient descent on the loss function `loss`, with 
@@ -50,18 +53,22 @@ def plot_rewards(rewards, folder):
     else:
         plt.show()
 
-def plot_goal_loc(folder):
+def plot_goal_loc(folder=None):
     f = open("goal_locations.log", "r+")
     goal_found_at = []
     for x in f:
         val = int(x[10:])
         goal_found_at.append(val)
-    f.truncate(0)
+    f.truncate(0) # clear the file
+    f.close()
     plt.plot(list(range(len(goal_found_at))), goal_found_at)
     plt.xlabel("Batch number")
     plt.ylabel("Num timesteps to goal")
-    plt.savefig(os.path.join(folder, "GoalIndex.png"))
-    plt.clf()
+    if folder==None:
+        plt.show()
+    else:
+        plt.savefig(os.path.join(folder, "GoalIndex.png"))
+        plt.clf()
 
 def save_model(model, folder, model_name):
     torch.save(model.state_dict(), os.path.join(folder, model_name))
@@ -78,8 +85,8 @@ def save_data(rewards, losses, folder):
     with open(data_save_path, 'w') as outfile:
         json.dump(data, outfile)
 
-def compare_parameter_initializations(params_list, model_args, num_steps):
-    sample_tasks = [sample_task() for _ in range(num_steps)]
+def compare_parameter_initializations(params_list, model_args, num_test_tasks, sampler):
+    sample_tasks = [sampler() for _ in range(num_test_tasks)]
     for d in params_list:
         all_rewards = []
         for t in sample_tasks:
@@ -93,7 +100,7 @@ def plot_adaptation(params_list):
     for i in range(len(params_list)):
         d = params_list[i]
         trials = -np.log10(np.abs(d["rewards"]))
-    #     trials = d["rewards"]
+        # trials = d["rewards"]
         x_series = np.array(range(len(trials[0])))
         mean_series = np.mean(trials, axis=0)
         std_err = scipy.stats.sem(trials, axis=0)

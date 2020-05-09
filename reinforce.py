@@ -37,8 +37,8 @@ class REINFORCE(nn.Module):
         self.use_critic = args.use_critic
         self.use_entropy = args.use_entropy
 
-        self.policy = args.policy(self.state_input_size, self.action_space_size)
-        self.old_policy = args.policy(self.state_input_size, self.action_space_size)
+        self.policy = args.policy(self.state_input_size, self.action_space_size, args.hidden_size)
+        self.old_policy = args.policy(self.state_input_size, self.action_space_size, args.hidden_size)
         self.init_optimizers()
 
     def init_optimizers(self):
@@ -123,7 +123,11 @@ class REINFORCE(nn.Module):
         mini_batch_rewards = []
         for t in range(traj_len):
             mini_batch_states.append(S[t].data.numpy())
-            mini_batch_actions.append(A[t])
+            if A[t].dim() == 0:
+                mini_batch_actions.append(A[t])
+            else:
+                assert not np.isnan(list(A[0])[0].item()), "state " + str(S) + " reward " + str(R)
+                mini_batch_actions.append(list(A[t]))
             mini_batch_td.append(critic_target[t])
             mini_batch_adv.append(adv[t])
             mini_batch_rewards.append(R[t])
@@ -175,6 +179,8 @@ class REINFORCE(nn.Module):
                 batch_rewards.extend(r)
 
             # we normalize all of the advantages together, considering over all batches
+            # pre_norm = copy.deepcopy(batch_adv)
+            assert np.sum(np.isnan(np.array(batch_adv))) == 0, str(batch_adv) + "\n" + str(batch_states) +"\n" + str(batch_actions)
             batch_adv = self.normalize_advantages(batch_adv)
             cumulative_rewards.append(sum(batch_rewards)/self.args.batch_size)
 
@@ -238,5 +244,6 @@ class REINFORCE(nn.Module):
                 print(cumulative_rewards[-1])
 
         return cumulative_rewards, losses
+
 
 
