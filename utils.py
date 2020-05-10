@@ -53,14 +53,136 @@ class Actor(nn.Module):
         # x = self.fc6_a(x)
         return self.fc6_c(x)
 
+class ActorWithLSTM(nn.Module):
+
+    def __init__(self, state_input_size, action_space_size):
+        super(ActorWithLSTM, self).__init__()
+
+        self.input_size = state_input_size
+        self.action_space_size = action_space_size
+
+        self.num_lstm_units = 1  #TODO
+        self.num_lstm_layers = 1  #TODO
+        self.batch_size = 1  #TODO
+
+        self.history_size = 0
+
+        self.lstm = nn.LSTM(input_size=self.input_size, hidden_size=self.num_lstm_units, num_layers=self.num_lstm_layers, batch_first=True)
+        self.hidden_to_output = nn.Linear(self.num_lstm_units, self.action_space_size) #TODO
+        self.hidden_to_value = nn.Linear(self.num_lstm_units, 1)
+
+        #Init hidden units
+        #weights = (num_layers, batch_size, num_lstm_units)
+        hidden_a = torch.randn(self.num_lstm_layers, self.batch_size, self.num_lstm_units)
+        hidden_b = torch.randn(self.num_lstm_layers, self.batch_size, self.num_lstm_units)
+
+        self.hidden_a = Variable(hidden_a)
+        self.hidden_b = Variable(hidden_b)
+
+    def init_hidden(self):
+        hidden_a = torch.randn(self.num_lstm_layers, self.batch_size, self.num_lstm_units)
+        hidden_b = torch.randn(self.num_lstm_layers, self.batch_size, self.num_lstm_units)
+
+        self.hidden_a = Variable(hidden_a)
+        self.hidden_b = Variable(hidden_b)
+
+
+    def forward(self, inputs):#x_lengths):
+        #Use pack_padded_sequence to make sure the LSTM won't see the padded items
+
+        #TODO: embed, might have reached goal state early
+
+        #batch_size = 1, seq_len = 1, embedding_dim = 144
+
+        # print ("x: ", x)
+
+        # print ("x.size(): ", x.size())
+        x, (a, b) = inputs
+
+        if (len(x.size()) > 3):
+            x = x.squeeze(0)
+        batch_size, seq_len, _ = x.size()
+
+        x_lengths_array = np.array([1 for i in range(batch_size)])
+        x_lengths = torch.from_numpy(x_lengths_array)
+
+        #Run through RNN
+        #Transform the dimension: (batch_size, seq_len, embedding_dim) --> (batch_size, seq_len, num_lstm_units)
+        x = torch.nn.utils.rnn.pack_padded_sequence(x, x_lengths, batch_first=True)
+
+        #Run through LSTM
+        x, (self.hidden_a, self.hidden_b) = self.lstm(x, (a, b))
+
+        #Undo packing opertaion
+        x, _ = torch.nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
+
+        #Project into output space
+        x = x.contiguous()
+        x = x.view(-1, x.shape[2]) #reshape the data so it goes into the linear layer
+
+        #run through the actual linear layer
+        x = self.hidden_to_output(x)
+
+        #Softmax activation
+        #Transform the dimension: (batch_size * seq_len, num_lstm_units) --> (batch_size, seq_len, action_space_size)
+        x = F.softmax(x, dim=1) #TODO
+
+        #Reshape back to (batch_size, seq_len, action_space_size)
+        x = x.view(batch_size, seq_len, self.action_space_size)
+
+        return x
+
+
+
+
+    def value(self, x):
+        if (len(x.size()) > 3):
+            x = x.squeeze(0)
+        if (len(x.size()) < 3):
+            x = x.unsqueeze(0)
+            x = x.unsqueeze(0)
+
+        batch_size, seq_len, _ = x.size()
+
+        x_lengths_array = np.array([1 for i in range(batch_size)])
+        x_lengths = torch.from_numpy(x_lengths_array)
+
+        #Run through RNN
+        #Transform the dimension: (batch_size, seq_len, embedding_dim) --> (batch_size, seq_len, num_lstm_units)
+        x = torch.nn.utils.rnn.pack_padded_sequence(x, x_lengths, batch_first=True)
+
+        #Run through LSTM
+        x, (self.hidden_a, self.hidden_b) = self.lstm(x, (self.hidden_a, self.hidden_b))
+
+        #Undo packing opertaion
+        x, _ = torch.nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
+
+        #Project into output space
+        x = x.contiguous()
+        x = x.view(-1, x.shape[2]) #reshape the data so it goes into the linear layer
+
+        #run through the actual linear layer - value
+        x = self.hidden_to_value(x)#, dim=1)
+
+        # #Softmax activation
+        # #Transform the dimension: (batch_size * seq_len, num_lstm_units) --> (batch_size, seq_len, action_space_size)
+        # x = F.softmax(x, dim=1) #TODO
+
+        # #Reshape back to (batch_size, seq_len, action_space_size)
+        # x = x.view(batch_size, seq_len, self.action_space_size)
+
+        # print ('Value x: ', x)
+
+        return x
+
 class ActorWithHistory(nn.Module):
 
-    def __init__(self, state_input_size, action_space_size, history_size=1):
+    def __init__(self, state_input_size, action_space_size, history_size=0):
         super(ActorWithHistory, self).__init__()
 
         self.history_size = history_size
         self.input_size = state_input_size
-        self.history_size = self.history_size
+        self.history_size = history_size
         self.action_space_size = action_space_size
 
 
@@ -86,53 +208,60 @@ class ActorWithHistory(nn.Module):
         return: vector containing probabilities?? of each
         '''
 
+        if self.history_size > 0:
+            if x.size(0) > (self.history_size+1): #and x.size(0) != self.input_size:
+                x = torch.flatten(x, start_dim=1)
+            else:
+                x = torch.flatten(x)
 
-        if x.size(0) > (self.history_size+1):
-            x = torch.flatten(x, start_dim=1)
+            x = F.relu(self.fc1_a(x))
+            x = F.relu(self.fc2_a(x))
+            x = F.relu(self.fc3_a(x))
+            x = F.relu(self.fc4_a(x))
+            # x = F.relu(self.fc5_a(x))
+            x = self.fc6_a(x)
+            return self.softmax(x)
         else:
-            x = torch.flatten(x)
-
-        x = F.relu(self.fc1_a(x))
-        x = F.relu(self.fc2_a(x))
-        x = F.relu(self.fc3_a(x))
-        x = F.relu(self.fc4_a(x))
-        # x = F.relu(self.fc5_a(x))
-        x = self.fc6_a(x)
-        return self.softmax(x)
+            x = F.relu(self.fc1_a(x))
+            x = F.relu(self.fc2_a(x))
+            x = F.relu(self.fc3_a(x))
+            x = F.relu(self.fc4_a(x))
+            # x = F.relu(self.fc5_a(x))
+            x = self.fc6_a(x)
+            return self.softmax(x)
 
     def value(self, x):
+        #Want value only for the current state (disregarding previous state)
 
-        # print ("x: ", x)
-        # print ("x.size(0): ", x.size(0))
-        # print ("inputs size*history_size: ", self.input_size*(self.history_size+1))
-        # print ("input size: ", self.input_size)
-        # print ("history size: ", self.history_size)
+        if self.history_size > 0:
+            if x.size(0) == self.input_size:
+                x = x
+            elif x.size(0) > (self.history_size+1):
+                values = x.detach().numpy()
+                new_input = []
+                for inp in values:
+                    new_input.append(inp[0])
+                x = torch.from_numpy(np.array(new_input))
 
-        if x.size(0) == self.input_size:
-            x = x
-        elif x.size(0) > (self.history_size+1):
-            #x = torch.flatten(x, start_dim=1)
-            # print ("YES")
-            values = x.detach().numpy()
-            new_input = []
-            # print ("values: ", values)
-            # print (len(values))
-            for inp in values:
-                new_input.append(inp[0])
-            x = torch.from_numpy(np.array(new_input))
+            else:
+                x = x[0]
+
+            x = F.relu(self.fc1_c(x))
+            x = F.relu(self.fc2_a(x))
+            x = F.relu(self.fc3_a(x))
+            x = F.relu(self.fc4_a(x))
+            # x = F.relu(self.fc5_a(x))
+            # x = self.fc6_a(x)
+            return self.fc6_c(x)
 
         else:
-            x = x[0]
-
-        # print ("X AFTER: ", x)
-
-        x = F.relu(self.fc1_c(x))
-        x = F.relu(self.fc2_a(x))
-        x = F.relu(self.fc3_a(x))
-        x = F.relu(self.fc4_a(x))
-        # x = F.relu(self.fc5_a(x))
-        # x = self.fc6_a(x)
-        return self.fc6_c(x)
+            x = F.relu(self.fc1_a(x))
+            x = F.relu(self.fc2_a(x))
+            x = F.relu(self.fc3_a(x))
+            x = F.relu(self.fc4_a(x))
+            # x = F.relu(self.fc5_a(x))
+            # x = self.fc6_a(x)
+            return self.fc6_c(x)
 
 class Critic(nn.Module):
 
@@ -216,50 +345,75 @@ class ActorCritic(nn.Module):
 
         return self.fc6_c(x)
 
-def generate_episode_with_history(policy, env, T, history_length=1):
+def generate_episode_with_history(policy, env, T, history_length):
     '''
     return state: list of torch.FloatTensor
            action: list of torch.FloatTensor
            reward: list of floats
     '''
-    S, A, R = [], [], []
+    if history_length > 0:
+        S, A, R = [], [], []
+        for i in range(0, T):
+            state = env.state_rep_func(env.agent_x, env.agent_y)#.get_state() #Variable(torch.FloatTensor(env.get_state()))
+            if i == 0:
+                running_state = state
+                for j in range(history_length):
+                    state_pad = np.zeros(len(state))
+                    running_state = np.vstack((running_state, state_pad))
+            else:
+                running_state_prev = running_state.copy()
+                running_state = state
+                for j in range(0, history_length):
+                    running_state = np.vstack((running_state, running_state_prev[j]))
+
+            state_tensor = Variable(torch.from_numpy(np.array(running_state)).float())
+
+            action_probs = policy(state_tensor)
+            m = Categorical(action_probs)
+            action_idx = m.sample()
+            next_state, reward = env.step(action_idx)
+
+            S.append(state_tensor)  
+            A.append(action_idx)
+            R.append(reward)
+
+            if next_state == None:
+                # reached terminal state
+                break
+            else:
+                state = next_state
+        
+        if next_state != None:
+            R[-1] = -100
+        logging.info(i)
+        S.append(torch.FloatTensor(next_state) if next_state != None else None)
+        return S, A, R
+    else:
+        S, A, R = generate_episode(policy, env, T)
+        return S, A, R
+
+def generate_episode_LSTM(policy, env, T, history_length):
+    # print ("generating...")
+    S, A, R, Hidden_A, Hidden_B = [], [], [], [], []
     for i in range(0, T):
-        state = env.state_rep_func(env.agent_x, env.agent_y)#.get_state() #Variable(torch.FloatTensor(env.get_state()))
-        # print ("\nstate: ", state)
-        if i == 0:
-            running_state = state
-            for j in range(history_length):
-                state_pad = np.zeros(len(state))
-                running_state = np.vstack((running_state, state_pad))
-        else:
-            running_state_prev = running_state.copy()
-            running_state = state
-            for j in range(0, history_length):
-                running_state = np.vstack((running_state, running_state_prev[j]))
-            # for j in range(history_length-1, 0, -1):
-            #     upper_row = running_state[j+1]
-            #     running_state[j] = upper_row
-            # running_state[0] = state
-        # print ("\nrunning_state: ", np.array(running_state))
-
-        # running_state[0] = state
-        # running_state[1] = running_state[0].copy()
-
-        state_tensor = Variable(torch.from_numpy(np.array(running_state)).float())
-        # print ("\ni: ", i)
-        # print ("running_state: ", running_state)
-        # print ("state_tensor: ", state_tensor)
-
-        action_probs = policy(state_tensor)
-        # print ("action_probs: ", action_probs)
+        state = Variable(torch.FloatTensor(env.get_state()))
+        state = state.unsqueeze(0)
+        state = state.unsqueeze(0)
+        a = policy.hidden_a
+        b = policy.hidden_b
+        # print ("a: ", a)
+        # print ("b: ", b)
+        Hidden_A.append(a)
+        Hidden_B.append(b)
+        action_probs = policy((state, (a, b)))
         m = Categorical(action_probs)
         action_idx = m.sample()
         # action = policy.ACTION_SPACE[action_idx.item()]
-        # print ("action_idx: ", action_idx)
         next_state, reward = env.step(action_idx)
+        # print ("reward: ", reward)
         # TODO
 
-        S.append(state_tensor)  #TODO: Change this
+        S.append(state)
         A.append(action_idx)
         R.append(reward)
 
@@ -269,11 +423,11 @@ def generate_episode_with_history(policy, env, T, history_length=1):
         else:
             state = next_state
     
-    if next_state != None:
-        R[-1] = -100
+    # if next_state != None:
+    #     R[-1] = -100
     logging.info(i)
     S.append(torch.FloatTensor(next_state) if next_state != None else None)
-    return S, A, R
+    return S, A, R, Hidden_A, Hidden_B
 
 def generate_episode(policy, env, T):
     '''
@@ -289,6 +443,7 @@ def generate_episode(policy, env, T):
         action_idx = m.sample()
         # action = policy.ACTION_SPACE[action_idx.item()]
         next_state, reward = env.step(action_idx)
+
         # TODO
 
         S.append(state)

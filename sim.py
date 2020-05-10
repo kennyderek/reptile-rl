@@ -9,10 +9,15 @@ class MazeSimulator:
 
     def __init__(self, goal_X, goal_Y, reward_type, state_rep, maze = None, wall_penalty=0, normalize_state=True):
         
-        self.maze = []
+        self.maze = maze#[]
 
-        self.num_row = 16
-        self.num_col = 9
+        # print ("self.maze: ", self.maze)
+
+        self.num_row = len(maze) #16
+        self.num_col = len(maze[0]) #9
+
+        # print ("init: ", self.num_row, self.num_col)
+
 
         self.agent_x = 1
         self.agent_y = 1
@@ -67,13 +72,14 @@ class MazeSimulator:
         self.goal_x = goal_X
         self.goal_y = goal_Y
 
-        self.maze[self.goal_y][self.goal_x] = 'G'
+        # self.maze[self.goal_y][self.goal_x] = 'G'
 
         # generates an information vector for each square
         self.maze_info = [[[] for c in range(self.num_col)] for r in range(self.num_row)]
         # print(self.maze_info)
         for x in range(1, self.num_col-1):
             for y in range(1, self.num_row-1):
+                # print (x, y)
                 '''
                 We don't actually do anything with this wall information yet
                 '''
@@ -136,6 +142,9 @@ class MazeSimulator:
             return self.get_state(), 0
         else:
             if self.reward == "distance":
+                # print ("agent: ", self.agent_x, self.agent_y)
+                # print ("goal: ", self.goal_x, self.goal_y)
+                # print (self.get_state(), penalty-((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2))
                 return self.get_state(), penalty-((self.agent_x - self.goal_x)**2 + (self.agent_y - self.goal_y)**2)**(1/2)
             elif self.reward == "constant":
                 return self.get_state(), penalty-1
@@ -145,7 +154,7 @@ class MazeSimulator:
         returns the maze info vector corresponding to the agent's current x, y position
         '''
         if self.maze[self.agent_y][self.agent_x] == 'G':
-            return None
+            return self.maze_info[self.agent_y][self.agent_x] #return None
         else:
             return self.maze_info[self.agent_y][self.agent_x]
 
@@ -209,8 +218,8 @@ class MazeSimulator:
                 else:
                     # print ("tensor: ", torch.from_numpy(np.array(self.state_rep_func(y, x))))#, dtype=torch.float32)))
                     heatmap[y][x] = critic.value(torch.from_numpy(np.array(self.state_rep_func(x, y))).float()).item() #critic.value(torch.from_numpy(np.array([self.maze_info[y][x]])).float()).item()
-
-        plt.imshow(np.array(heatmap), cmap='PRGn', interpolation='nearest')
+                    print ("heatmap[y][x]: ", (x,y), heatmap[y][x])
+        plt.imshow(np.array(heatmap), cmap='Blues', interpolation='nearest')
         plt.savefig(title)
         plt.clf()
 

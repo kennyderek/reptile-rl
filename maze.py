@@ -189,10 +189,14 @@ class Prelim_Maze:
 
 	def generate_maze(self):
 		'''Generates overall maze of Maze_Cells with specified number of walls and random goal position'''
+		# print (1)
 		self.make_maze_with_num_walls()
+		# print (2)
 		if self.goal is None:
 			self.set_goal()
+		# print (3)
 		self.generate_maze_of_maze_cells()
+		# print (4)
 
 
 	def print_preliminary_maze(self):
@@ -358,9 +362,12 @@ class Maze:
 	'''Represents a maze as a grid of cells, treating each object as separate cell'''
 
 	def __init__(self, num_rows, num_cols, num_walls, start = None, goal = None):
+		# print ("HERE")
 		prelim_maze = Prelim_Maze(num_rows, num_cols, num_walls, start, goal = None)
-
+		# print ("ONE")
 		prelim_maze.generate_maze()
+		# print ("TWO")
+
 
 		self.num_rows = 2*num_rows + 1
 		self.num_cols = 2*num_cols + 1
@@ -379,11 +386,23 @@ class Maze:
 		else:
 			self.start = self.get_cell(2*start[0]+1, 2*start[1]+1)
 
+
 	def get_cell(self, row, col):
 		'''Returns Maze_Cell object at (row, col)'''
 
 		return self.maze[row][col]
 
+	def get_array_maze(self):
+		new_maze = [[0 for col in range(self.num_cols)] for row in range(self.num_rows)]
+
+		for new_row in range(self.num_rows):
+			for new_col in range(self.num_cols):
+				cell = self.maze[new_row][new_col]
+				row = cell.row
+				col = cell.col
+
+				new_maze[new_row][new_col] = str(cell)
+		return new_maze
 
 	def __str__(self):
 		'''Returns string representation of maze'''
@@ -406,10 +425,10 @@ class Maze:
 
 
 
-if __name__ == "__main__":
-	m = Maze(2, 2, 5, (0, 0))
-	# m.generate_maze()
-	# prelim = m.print_preliminary_maze()
-	# print (prelim)
-	# print (m.goal.row, m.goal.col)
-	print (m)
+# if __name__ == "__main__":
+# 	m = Maze(2, 2, 5, (0, 0))
+# 	# m.generate_maze()
+# 	# prelim = m.print_preliminary_maze()
+# 	# print (prelim)
+# 	# print (m.goal.row, m.goal.col)
+# 	print (m)

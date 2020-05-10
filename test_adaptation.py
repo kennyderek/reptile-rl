@@ -15,7 +15,7 @@ import torch
 #     '''
 #     return model.train(world, num_batches=1000, batch_size=1, horizon=100)
 
-test_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
+test_vertical_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
@@ -32,18 +32,52 @@ test_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
             ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
             ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
 
+vertical_goal = (6, 1)
+
+test_horizontal_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", "W", "W", "W", "W", "W", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
+
+horizontal_goal = (1, 6)
+
+test_random_maze = [['W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W'], 
+            ['W', ' ', 'W', ' ', ' ', ' ', ' ', ' ', ' ', 'W', 'W'], 
+            ['W', ' ', ' ', ' ', ' ', 'W', ' ', ' ', ' ', ' ', 'W'], 
+            ['W', ' ', ' ', ' ', 'W', ' ', ' ', ' ', ' ', 'G', 'W'], 
+            ['W', 'W', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'W'], 
+            ['W', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'W'], 
+            ['W', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'W'], 
+            ['W', ' ', 'W', ' ', 'W', ' ', 'W', ' ', ' ', ' ', 'W'], 
+            ['W', ' ', ' ', 'W', ' ', ' ', ' ', 'W', ' ', ' ', 'W'], 
+            ['W', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'W'], 
+            ['W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W']]
+
+random_goal = (9, 3)
+
 if __name__ == "__main__":
     # saved_model = "meta_train_results/best_meta_init_at_iter82.pth"
-    saved_model = "meta_train_results/final_reptile_model_init.pth"
     random.seed(1)
 
     # choose a specific world to adapt the model to
     world = MazeSimulator(
-                goal_X=6,
-                goal_Y=1,
+                goal_X=random_goal[0],
+                goal_Y=random_goal[1],
                 reward_type="distance",
                 state_rep="fullboard",
-                maze=test_maze,
+                maze=test_random_maze,
                 wall_penalty=0,
                 normalize_state=True)
     class Args():   
@@ -67,6 +101,7 @@ if __name__ == "__main__":
             self.batch_size = 10
             self.horizon = 100
             self.weight_func = lambda batch_num: (1 - batch_num/self.num_batches)**2
+            self.history_size = 0
 
     args = Args(world)
     args.ppo = True
@@ -77,7 +112,7 @@ if __name__ == "__main__":
     args.ppo_dec_epsilon = 0
 
     # model = REINFORCE(args)
-
+    saved_model = "meta_train_results/final_random_0_reptile_model_init.pth"
     init_params = torch.load(saved_model)
     # model = A2C(world.state_size, world.num_actions, seed=1, lr=0.01, use_opt=False, ppo=False)
     model = REINFORCE(args)
@@ -90,12 +125,12 @@ if __name__ == "__main__":
 
 
     plt.plot(list(range(len(rewards))), rewards)
-    plt.savefig("TestRewardsOfReptile")
+    plt.savefig("TestRewardsOfReptile_Random_0")
 
 
 
     # world.visualize(model.policy)
-    world.visualize_value(model.policy, "TestValuemap")
+    world.visualize_value(model.policy, "TestValuemap_Random_1")
 
 
     # adapt()

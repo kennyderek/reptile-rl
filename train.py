@@ -12,7 +12,7 @@ def make_folder(folder):
 
 def visualize_policy(model, folder):
     # world.visualize(model.policy, os.path.join(folder, "heatmap"))
-    world.visualize_value(model.policy.value, os.path.join(folder, "valuemap"))
+    world.visualize_value(model.policy, os.path.join(folder, "valuemap"))
 
 def plot_losses(losses, folder):
     if "actor" in losses[0]:
@@ -31,7 +31,7 @@ def plot_rewards(rewards, folder):
     plt.plot(list(range(len(rewards))), rewards)
     plt.xlabel("Batch number")
     plt.ylabel("Reward")
-    plt.savefig(os.path.join(folder, "Rewards"))
+    plt.savefig(os.path.join(folder, "Rewards_LSTM"))
     plt.clf()
 
 def plot_goal_loc(folder):
@@ -68,7 +68,9 @@ maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
         ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
         ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
 
-test_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
+maze_goal = (6, 10)
+
+vertical_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
@@ -84,6 +86,33 @@ test_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
             ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
             ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
             ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
+vertical_goal = (6, 1)
+
+horizontal_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", "W", "W", "W", "W", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
+
+simple_maze = [["W", "W", "W", "W"],
+        ["W", " ", " ", "W"],
+        ["W", " ", "G", "W"],
+        ["W", "W", "W", "W"]]
+
+simple_goal = (2, 2)
+
+horizontal_goal = (1, 6)
 
 if __name__ == "__main__":
     
@@ -94,10 +123,10 @@ if __name__ == "__main__":
     Normalize state: scales the x, y coordinates to be variance of 1 and mean of 0, assuming uniform distribution
     '''
     
-    world = MazeSimulator(goal_X=6, goal_Y=1,
+    world = MazeSimulator(goal_X=simple_goal[0], goal_Y=simple_goal[1],
                     reward_type="distance",
                     state_rep="fullboard",
-                    maze=test_maze,
+                    maze=simple_maze,
                     wall_penalty=-10,
                     normalize_state=True)  #6, 10
 
@@ -117,12 +146,13 @@ if __name__ == "__main__":
             # training related arguments
             self.gradient_clipping = True
             self.random_perm = True
-            self.num_batches = 300
-            self.num_mini_batches = 2
-            self.batch_size = 10
-            self.horizon = 100
+            self.num_batches = 30000#3000#00
+            self.num_mini_batches = 1#2
+            self.batch_size = 1#2#10
+            self.horizon = 1#100
             self.weight_func = lambda batch_num: (1 - batch_num/self.num_batches)**2
-    
+            self.history_size = 1
+
     def run_experiment(args, folder):
         model = REINFORCE(args)
         rewards, losses = model.train(world)

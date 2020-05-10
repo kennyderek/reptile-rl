@@ -6,6 +6,7 @@ from copy import deepcopy
 from collections import OrderedDict
 from tqdm import tqdm
 import torch
+from maze import Maze
 
 
 def update_init_params(target, old, step_size = 0.1):
@@ -116,7 +117,7 @@ if __name__ == "__main__":
                 self.batch_size = 10
                 self.horizon = 100
                 self.weight_func = lambda batch_num: (1 - batch_num/self.num_batches)**2
-
+                self.history_size = 0
         args = Args(world)
         args.ppo = True
         args.use_critic = True
@@ -127,7 +128,7 @@ if __name__ == "__main__":
 
         model = REINFORCE(args)
 
-        def sample():
+        def sample_vertical():
             maze_instance = deepcopy(maze)
             y = random.randint(2, 7)
             x = 4
@@ -142,12 +143,43 @@ if __name__ == "__main__":
                         wall_penalty=0,
                         normalize_state=True)
 
-        model_init, rewards = train_reptile(model, sample, 10, meta_lr=0.05)
+        def sample_horizontal():
+            maze_instance = deepcopy(maze)
+            x = random.randint(2, 7)
+            y = 4
+            for j in range(1, y+1):
+                maze_instance[y][j] = "W"
+            
+            return MazeSimulator(goal_X=x,
+                        goal_Y=y,
+                        reward_type="distance",
+                        state_rep="fullboard",
+                        maze=maze_instance,
+                        wall_penalty=0,
+                        normalize_state=True)
+
+        #Keep Goal Location Same, but change to random wall configuration
+        def sample_random():
+            maze_instance = Maze(5, 5, 10, start=(0,0), goal=(4, 1))
+            maze_string = str(maze_instance)
+            maze_array = maze_instance.get_array_maze()
+            for row in range(len(maze_array)):
+                # print ("before: ", maze_array[row][len(maze_array[row])-1])
+                maze_array[row][len(maze_array[row])-1] = 'W'
+                # print ("after: ", maze_array[row][len(maze_array[row])-1])
+            # print (maze_array)
+            # print (maze_string)
+
+            return MazeSimulator(goal_X=9, goal_Y=3, reward_type="distance", state_rep="fullboard",maze=maze_array,wall_penalty=0, normalize_state=True)
+
+        # sample_random()
+
+        model_init, rewards = train_reptile(model, sample_random, 9, meta_lr=0.05)
 
         # world.visualize(model_init.policy)
-        world.visualize_value(model_init.policy, "Valuemap")#.critic)
+        world.visualize_value(model_init.policy, "Valuemap_Random_0")#.critic)
 
         plt.plot(list(range(len(rewards))), rewards)
-        plt.savefig("RewardsOfReptile")
+        plt.savefig("RewardsOfReptile_Random_0")
 
-        torch.save(model.state_dict(), "meta_train_results/final_reptile_model_init.pth")
+        torch.save(model.state_dict(), "meta_train_results/final_random_0_reptile_model_init.pth")
