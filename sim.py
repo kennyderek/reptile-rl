@@ -1,4 +1,4 @@
-from copy import copy
+import copy
 from random import randint
 from random import random
 import matplotlib.pyplot as plt
@@ -272,7 +272,7 @@ class Discrete2D:
 
 
 class Continuous2D:
-    state_size = 2
+    state_size = 5*7
     num_actions = 2
 
     def __init__(self, args):
@@ -287,7 +287,7 @@ class Continuous2D:
         '''
         ret: list [x, y]
         '''
-        return list(self.agent)
+        return 
 
     def step(self, policy_output):
         '''
@@ -307,54 +307,363 @@ class Continuous2D:
         return Continuous2D(self.args)
 
 
-
-
-
-
-class Discrete2DMazeFlags:
+class SideScroller:
+    state_size = 6*6
+    num_actions = 4
 
     def __init__(self, args):
         self.args = args
-
         self.rows = args.rows
         self.cols = args.cols
-        self.dims = np.array([self.cols, self.rows])
 
-        self.agent = np.array(args.agent) # list
-        self.goal = np.array(args.goal) # list
+        self.blockers = args.blockers # set of (x, y) arrays?
+        
+        self.agent = np.array([0, self.rows-1]) # bottom left location
+        self.agent_velocity = np.array([0, 0])
 
-        self.state_size = 4
-        self.num_actions = 4
+        self.screen = [[0 for i in range(self.cols)] for i in range(self.rows)]
+
+        # populate the screen image, with a 1 for the agent, -1 for blockers, 0 otherwise
+        self.screen[self.agent[1]][self.agent[0]] = 1
+        for block in self.blockers:
+            self.screen[block[1]][block[0]] = -1
+        # self.agent_screen = [[0 for i in range(self.cols)] for i in range(self.rows)]
+        self.goal = np.array([self.cols - 1, self.rows - 1])
+        self.prev_screen = copy.deepcopy(self.screen)
 
     def get_state(self):
         '''
-        ret: list [x, y]
+        ret: image?
         '''
-        direction = (np.zeros(self.agent.shape) + (self.agent > self.goal))
-        return list(self.agent/self.dims) + list(direction)
+        l = []
+        for r, rp in zip(self.screen, self.prev_screen):
+            l += list(np.array(r) + 0.5*np.array(rp))
+        return l
+        # return [[self.screen]]
+        # return [[list(np.array(self.screen) + 0.5 * np.array(self.prev_screen))]]
 
     def step(self, policy_output):
         '''
         input: int
         ret: state (list), reward (int)
         '''
+        self.prev_screen = copy.deepcopy(self.screen)
+        policy_output = policy_output.item()
         x = self.agent[0]
         y = self.agent[1]
-        if policy_output == 0:
-            self.agent[0] = min(x+1, self.cols)
-        if policy_output == 1:
-            self.agent[0] = max(x-1, 0)
+        if policy_output == 0 and self.agent[1] == self.rows - 1: # going up with a jump, and not in air currently
+            self.agent_velocity[1] = -2
 
-        if policy_output == 2:
-            self.agent[1] = min(y+1, self.rows)
-        if policy_output == 3:
-            self.agent[1] = max(y-2, 0)
+        if policy_output == 1: # right
+            self.agent_velocity[0] = min(self.agent_velocity[0] + 1, 2)
 
-        dist_to_goal = -np.sqrt(np.sum((self.agent - self.goal)**2))
-        if dist_to_goal == 0:
+        if policy_output == 2: # left
+            self.agent_velocity[0] = max(self.agent_velocity[0] - 1, -2)
+
+        if policy_output == 3: # down, does not do anything
+            pass
+        
+        # add velocity to the agent position
+        self.agent_old = copy.copy(self.agent)
+        vel_x = self.agent_velocity[0]
+        vel_y = self.agent_velocity[1]
+        for i in range(abs(vel_x)):
+            if [self.agent[0] + np.sign(vel_x), self.agent[1]] not in self.blockers:
+                self.agent[0] += np.sign(vel_x)
+            else:
+                self.agent_velocity[0] = 0
+                break
+        
+        for i in range(abs(vel_y)):
+            if [self.agent[0], self.agent[1] + np.sign(vel_y)] not in self.blockers:
+                self.agent[1] += np.sign(vel_y)
+            else:
+                self.agent_velocity[1] = 0
+                break
+        
+
+        self.agent[0] = max(min(self.agent[0], self.cols-1), 0)
+        self.agent[1] = max(min(self.agent[1], self.rows-1), 0)
+
+        self.screen[self.agent_old[1]][self.agent_old[0]] = 0
+        self.screen[self.agent[1]][self.agent[0]] = 1
+
+        # simulate forces of gravity
+        if self.agent[1] < self.rows - 1:
+            self.agent_velocity[1] = self.agent_velocity[1] + 1
+        else:
+            self.agent_velocity[1] = 0
+
+        if list(self.agent) == list(self.goal):
             return None, 0
         else:
-            return self.get_state(), dist_to_goal
+            return self.get_state(), -1
     
     def generate_fresh(self):
-        return Discrete2DMazeFlags(self.args)
+        return SideScroller(self.args)
+
+    def plot(self):
+        print(np.array(self.screen))
+
+
+class Gobble:
+    state_size = 6*6
+    num_actions = 4
+
+    def __init__(self, args):
+        self.args = args
+        self.rows = args.rows
+        self.cols = args.cols
+
+        # self.blockers = args.blockers # set of (x, y) arrays?
+        self.targets = set([tuple(t) for t in args.targets])
+        
+        self.agent = np.array([0, self.rows-1]) # bottom left location
+        # self.agent_velocity = np.array([0, 0])
+
+        self.screen = [[0 for i in range(self.cols)] for i in range(self.rows)]
+
+        # populate the screen image, with a 1 for the agent, -1 for blockers, 0 otherwise
+        self.screen[self.agent[1]][self.agent[0]] = 1
+        for target in self.targets:
+            self.screen[target[1]][target[0]] = -1
+        
+        self.prev_screen = copy.deepcopy(self.screen)
+        # self.goal = np.array([self.cols - 1, self.rows - 1])
+
+    def get_state(self):
+        '''
+        ret: image?
+        '''
+        l = []
+        for r, rp in zip(self.screen, self.prev_screen):
+            l += list(np.array(r) + 0.5*np.array(rp))
+        return l
+        # return [[list(np.array(self.screen) + 0.5 * np.array(self.prev_screen))]]
+
+    def step(self, policy_output):
+        '''
+        input: int
+        ret: state (list), reward (int)
+        '''
+        reward_mod = 0
+        policy_output = policy_output.item()
+        self.prev_screen = copy.deepcopy(self.screen)
+        # x = self.agent[0]
+        # y = self.agent[1]
+        # if policy_output == 0 and self.agent[1] == self.rows - 1: # going up with a jump, and not in air currently
+        #     self.agent[1] += 1
+        agent_old = copy.copy(self.agent)
+
+        if policy_output == 0: # right
+            self.agent[0] += 1
+
+        if policy_output == 1: # left
+            self.agent[0] -= 1
+
+        if policy_output == 2: # down
+            self.agent[1] += 1
+
+        if policy_output == 3: # up
+            self.agent[1] -= 1
+
+        self.agent[0] = max(min(self.agent[0], self.cols-1), 0)
+        self.agent[1] = max(min(self.agent[1], self.rows-1), 0)
+
+        if tuple(self.agent) in self.targets:
+            self.targets.remove(tuple(self.agent))
+            reward_mod += 10
+
+        self.screen[agent_old[1]][agent_old[0]] = 0
+        self.screen[self.agent[1]][self.agent[0]] = 1
+
+
+        if len(self.targets) == 0:
+            return None, reward_mod
+        else:
+            return self.get_state(), -1 + reward_mod
+    
+    def generate_fresh(self):
+        return Gobble(self.args)
+    
+    def plot(self):
+        print(np.array(self.screen))
+
+
+class RockOn:
+    state_size = 6*6
+    num_actions = 4
+
+    def __init__(self, args):
+        self.args = args
+        self.rows = args.rows
+        self.cols = args.cols
+
+        # self.blockers = args.blockers # set of (x, y) arrays?
+        # self.rocks = [t for t in args.rocks]
+        
+        self.agent = np.array([0, self.rows-1]) # bottom left location
+        # self.agent_velocity = np.array([0, 0])
+
+        self.screen = [[0 for i in range(self.cols)] for i in range(self.rows)]
+        self.rocks = [[randint(0, self.cols-1), randint(-5,0)] for i in range(args.num_rocks)]
+        # self.rock_movs_x = self.args.movs_x
+        # self.rock_movs_y = self.args.movs_y
+
+        # populate the screen image, with a 1 for the agent, -1 for blockers, 0 otherwise
+        # self.agent_screen[self.agent[1]][self.agent[0]] = 0.1
+        for rock in self.rocks:
+            if rock[1] >= 0:
+                self.screen[rock[1]][rock[0]] = -0.1
+        
+        self.prev_screen = copy.deepcopy(self.screen)
+        self._t = 0
+        # self.goal = np.array([self.cols - 1, self.rows - 1])
+
+    def get_state(self):
+        '''
+        ret: image?
+        '''
+        l = []
+        for r, rp in zip(self.screen, self.prev_screen):
+            l += list(np.array(r) + 0.5*np.array(rp))
+        return l
+        # return [[self.screen, self.agent_screen]]
+
+    def step(self, policy_output):
+        '''
+        input: int
+        ret: state (list), reward (int)
+        '''
+        self.prev_screen = copy.deepcopy(self.screen)
+        self._t += 1
+        policy_output = policy_output.item()
+
+        agent_old = copy.copy(self.agent)
+
+        if policy_output == 0: # right
+            self.agent[0] += 1
+
+        if policy_output == 2: # left
+            self.agent[0] -= 1
+
+        # if policy_output == 2: # down
+        #     self.agent[1] += 1
+
+        # if policy_output == 3: # up
+        #     self.agent[1] -= 1
+
+        self.agent[0] = max(min(self.agent[0], self.cols-1), 0)
+        # self.agent[1] = max(min(self.agent[1], self.rows-1), 0)
+
+        # update rocks
+        for i in range(len(self.rocks)):
+            r_old = copy.copy(self.rocks[i])
+            # r[0] = (r[0] + self.rock_movs_x[i][self._t]) % self.cols
+            # r[1] = (r[1] + self.rock_movs_y[i][self._t]) % self.rows
+            self.rocks[i][1] += 1
+            if self.rocks[i][1] >= self.args.rows:
+                self.rocks[i] = [randint(0, self.cols-1), randint(-5,0)]
+            elif 0 <= self.rocks[i][1] < self.args.rows:
+                self.screen[self.rocks[i][1]][self.rocks[i][0]] = -0.1
+            if 0 <= r_old[1] < self.args.rows:
+                self.screen[r_old[1]][r_old[0]] = 0
+
+        # update agent
+        self.screen[agent_old[1]][agent_old[0]] = 0
+        self.screen[self.agent[1]][self.agent[0]] = 0.1
+
+        # reward and next state
+        if list(self.agent) in self.rocks:
+            return None, -1000
+        else:
+            return self.get_state(), self._t/2
+    
+    def generate_fresh(self):
+        return RockOn(self.args)
+
+    def plot(self):
+        print(np.array(self.screen))
+
+class NoGobble:
+    state_size = 6*6
+    num_actions = 4
+
+    def __init__(self, args):
+        self.args = args
+        self.rows = args.rows
+        self.cols = args.cols
+
+        # self.blockers = args.blockers # set of (x, y) arrays?
+        self.targets = set([tuple(t) for t in args.targets])
+        
+        self.agent = np.array([0, self.rows-1]) # bottom left location
+        # self.agent_velocity = np.array([0, 0])
+
+        self.screen = [[0 for i in range(self.cols)] for i in range(self.rows)]
+
+        # populate the screen image, with a 1 for the agent, -1 for blockers, 0 otherwise
+        self.screen[self.agent[1]][self.agent[0]] = 1
+        for target in self.targets:
+            self.screen[target[1]][target[0]] = -1
+        
+        self.prev_screen = copy.deepcopy(self.screen)
+        # self.goal = np.array([self.cols - 1, self.rows - 1])
+
+    def get_state(self):
+        '''
+        ret: image?
+        '''
+        l = []
+        for r, rp in zip(self.screen, self.prev_screen):
+            l += list(np.array(r) + 0.5*np.array(rp))
+        return l
+        # return [[list(np.array(self.screen) + 0.5 * np.array(self.prev_screen))]]
+
+    def step(self, policy_output):
+        '''
+        input: int
+        ret: state (list), reward (int)
+        '''
+        policy_output = policy_output.item()
+        self.prev_screen = copy.deepcopy(self.screen)
+        # x = self.agent[0]
+        # y = self.agent[1]
+        # if policy_output == 0 and self.agent[1] == self.rows - 1: # going up with a jump, and not in air currently
+        #     self.agent[1] += 1
+        agent_old = copy.copy(self.agent)
+
+        if policy_output == 0: # right
+            self.agent[0] += 1
+
+        if policy_output == 1: # left
+            self.agent[0] -= 1
+
+        if policy_output == 2: # down
+            self.agent[1] += 1
+
+        if policy_output == 3: # up
+            self.agent[1] -= 1
+
+        if 0 > self.agent[0] > self.cols - 1:
+            return None, -100
+        if 0 > self.agent[1] > self.rows - 1:
+            return None, -100
+
+        self.agent[0] = max(min(self.agent[0], self.cols-1), 0)
+        self.agent[1] = max(min(self.agent[1], self.rows-1), 0)
+
+        if tuple(self.agent) in self.targets:
+            return None, -100
+
+        self.screen[agent_old[1]][agent_old[0]] = 0
+        self.screen[self.agent[1]][self.agent[0]] = 1
+
+        return self.get_state(), 1
+    
+    def generate_fresh(self):
+        return NoGobble(self.args)
+
+    def plot(self):
+        print(np.array(self.screen))
+
