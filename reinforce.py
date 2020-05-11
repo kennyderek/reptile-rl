@@ -378,56 +378,56 @@ class REINFORCE(nn.Module):
                     tds[t] = G
 
                 # for i in range(len(total_batch_states)):
-                    batch_actor_loss, batch_entropy_loss = self.compute_RNN_loss(batch_state, self.policy.hidden_a, self.policy.hidden_b, batch_action, advantages[-1], ppo_epsilon=calc_eps_decay())
-                    #total_batch_states[i], total_hidden_a[i], total_hidden_b[i], total_batch_actions[i], advantages[i], ppo_epsilon=calc_eps_decay())
+                batch_actor_loss, batch_entropy_loss = self.compute_RNN_loss(batch_state, self.policy.hidden_a, self.policy.hidden_b, batch_action, advantages[-1], ppo_epsilon=calc_eps_decay())
+                #total_batch_states[i], total_hidden_a[i], total_hidden_b[i], total_batch_actions[i], advantages[i], ppo_epsilon=calc_eps_decay())
 
-                    if self.use_critic:
-                        batch_critic_loss = self.compute_critic_loss_RNN(batch_state, tds[-1])
-                        #total_batch_states[i], tds[i])
+                if self.use_critic:
+                    batch_critic_loss = self.compute_critic_loss_RNN(batch_state, tds[-1])
+                    #total_batch_states[i], tds[i])
 
-                    batch_actor_loss = batch_actor_loss
-                    batch_entropy_loss = (0.1 + self.args.weight_func(batch))*batch_entropy_loss
+                batch_actor_loss = batch_actor_loss
+                batch_entropy_loss = (0.1 + self.args.weight_func(batch))*batch_entropy_loss
 
-                    loss_d = {"actor": batch_actor_loss.item()}
-                    loss = batch_actor_loss
-                    # print ("loss: ", loss)
-                    if self.use_critic:
-                        loss += batch_critic_loss
-                        loss_d["critic"] = batch_critic_loss.item()
-                    if self.use_entropy:
-                        loss += batch_entropy_loss
-                        loss_d["entropy"] = batch_entropy_loss.item()
-                    losses.append(loss_d)
+                loss_d = {"actor": batch_actor_loss.item()}
+                loss = batch_actor_loss
+                # print ("loss: ", loss)
+                if self.use_critic:
+                    loss += batch_critic_loss
+                    loss_d["critic"] = batch_critic_loss.item()
+                if self.use_entropy:
+                    loss += batch_entropy_loss
+                    loss_d["entropy"] = batch_entropy_loss.item()
+                losses.append(loss_d)
 
-       
-                    old_param = copy.deepcopy(self.policy.state_dict())
+   
+                old_param = copy.deepcopy(self.policy.state_dict())
 
-                    self.opt_a.zero_grad()
-                    loss.backward(retain_graph=True)
+                self.opt_a.zero_grad()
+                loss.backward(retain_graph=True)
 
-                    if self.args.gradient_clipping:
-                        torch.nn.utils.clip_grad_norm_(self.parameters(), 0.5)
-                    
-                    self.opt_a.step()
+                if self.args.gradient_clipping:
+                    torch.nn.utils.clip_grad_norm_(self.parameters(), 0.5)
+                
+                self.opt_a.step()
 
 
-                if self.ppo:
-                    # update old policy to the previous new policy
-                    self.old_policy.load_state_dict(temp_state_dict)
+            if self.ppo:
+                # update old policy to the previous new policy
+                self.old_policy.load_state_dict(temp_state_dict)
 
-                self.policy.init_hidden()
-                # if self.ppo:
-                #     self.old_policy.init_hidden()
+            self.policy.init_hidden()
+            # if self.ppo:
+            #     self.old_policy.init_hidden()
 
-                env = env.generate_fresh()
+            env = env.generate_fresh()
 
-                total_batch_states = []
-                total_batch_actions = []
-                total_batch_td = []
-                total_batch_advs = []
-                total_batch_rewards = []
+            total_batch_states = []
+            total_batch_actions = []
+            total_batch_td = []
+            total_batch_advs = []
+            total_batch_rewards = []
 
-                # print(cumulative_rewards[-1])
+            # print(cumulative_rewards[-1])
 
         return cumulative_rewards, losses
 
