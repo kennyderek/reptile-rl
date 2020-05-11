@@ -61,14 +61,18 @@ class ActorWithLSTM(nn.Module):
         self.input_size = state_input_size
         self.action_space_size = action_space_size
 
-        self.num_lstm_units = 1  #TODO
-        self.num_lstm_layers = 1  #TODO
-        self.batch_size = 1  #TODO
+        self.num_lstm_units = 1 #TODO: check
+        self.num_lstm_layers = 1  #TODO: check
+        self.batch_size = 1  #TODO: check
+        self.hidden_size = 300
 
         self.history_size = 0
 
         self.lstm = nn.LSTM(input_size=self.input_size, hidden_size=self.num_lstm_units, num_layers=self.num_lstm_layers, batch_first=True)
-        self.hidden_to_output = nn.Linear(self.num_lstm_units, self.action_space_size) #TODO
+        self.fc2_a = nn.Linear(self.hidden_size, self.hidden_size)
+        self.fc3_a = nn.Linear(self.hidden_size, self.hidden_size)
+        self.fc4_a = nn.Linear(self.hidden_size, self.hidden_size)
+        self.hidden_to_output = nn.Linear(self.num_lstm_units, self.action_space_size)
         self.hidden_to_value = nn.Linear(self.num_lstm_units, 1)
 
         #Init hidden units
@@ -76,15 +80,15 @@ class ActorWithLSTM(nn.Module):
         hidden_a = torch.randn(self.num_lstm_layers, self.batch_size, self.num_lstm_units)
         hidden_b = torch.randn(self.num_lstm_layers, self.batch_size, self.num_lstm_units)
 
-        self.hidden_a = Variable(hidden_a)
-        self.hidden_b = Variable(hidden_b)
+        self.hidden_a = hidden_a
+        self.hidden_b = hidden_b
 
     def init_hidden(self):
         hidden_a = torch.randn(self.num_lstm_layers, self.batch_size, self.num_lstm_units)
         hidden_b = torch.randn(self.num_lstm_layers, self.batch_size, self.num_lstm_units)
 
-        self.hidden_a = Variable(hidden_a)
-        self.hidden_b = Variable(hidden_b)
+        self.hidden_a = hidden_a
+        self.hidden_b = hidden_b
 
 
     def forward(self, inputs):#x_lengths):
@@ -92,11 +96,6 @@ class ActorWithLSTM(nn.Module):
 
         #TODO: embed, might have reached goal state early
 
-        #batch_size = 1, seq_len = 1, embedding_dim = 144
-
-        # print ("x: ", x)
-
-        # print ("x.size(): ", x.size())
         x, (a, b) = inputs
 
         if (len(x.size()) > 3):
@@ -119,6 +118,10 @@ class ActorWithLSTM(nn.Module):
         #Project into output space
         x = x.contiguous()
         x = x.view(-1, x.shape[2]) #reshape the data so it goes into the linear layer
+
+        x = F.relu(self.fc2_a(x))
+        x = F.relu(self.fc3_a(x))
+        x = F.relu(self.fc4_a(x))
 
         #run through the actual linear layer
         x = self.hidden_to_output(x)
@@ -161,28 +164,22 @@ class ActorWithLSTM(nn.Module):
         x = x.contiguous()
         x = x.view(-1, x.shape[2]) #reshape the data so it goes into the linear layer
 
+        x = F.relu(self.fc2_a(x))
+        x = F.relu(self.fc3_a(x))
+        x = F.relu(self.fc4_a(x))
         #run through the actual linear layer - value
         x = self.hidden_to_value(x)#, dim=1)
-
-        # #Softmax activation
-        # #Transform the dimension: (batch_size * seq_len, num_lstm_units) --> (batch_size, seq_len, action_space_size)
-        # x = F.softmax(x, dim=1) #TODO
-
-        # #Reshape back to (batch_size, seq_len, action_space_size)
-        # x = x.view(batch_size, seq_len, self.action_space_size)
-
-        # print ('Value x: ', x)
 
         return x
 
 class ActorWithHistory(nn.Module):
 
-    def __init__(self, state_input_size, action_space_size, history_size=0):
+    def __init__(self, state_input_size, action_space_size, history_size=1):
         super(ActorWithHistory, self).__init__()
 
         self.history_size = history_size
         self.input_size = state_input_size
-        self.history_size = history_size
+        self.history_size = self.history_size
         self.action_space_size = action_space_size
 
 
@@ -191,7 +188,6 @@ class ActorWithHistory(nn.Module):
         self.hidden_size2 = 300
 
         self.fc1_a = nn.Linear(self.input_size*(self.history_size+1), self.hidden_size)
-        self.fc1_c = nn.Linear(self.input_size, self.hidden_size)
         self.fc2_a = nn.Linear(self.hidden_size, self.hidden_size1)
         self.fc3_a = nn.Linear(self.hidden_size1, self.hidden_size1)
         self.fc4_a = nn.Linear(self.hidden_size1, self.hidden_size2)
@@ -200,6 +196,9 @@ class ActorWithHistory(nn.Module):
         self.softmax = nn.Softmax()
 
         self.fc6_c = nn.Linear(self.hidden_size2, 1)
+
+        self.fc1_c = nn.Linear(self.input_size, self.hidden_size)
+
 
 
     def forward(self, x):
@@ -392,43 +391,6 @@ def generate_episode_with_history(policy, env, T, history_length):
         S, A, R = generate_episode(policy, env, T)
         return S, A, R
 
-def generate_episode_LSTM(policy, env, T, history_length):
-    # print ("generating...")
-    S, A, R, Hidden_A, Hidden_B = [], [], [], [], []
-    for i in range(0, T):
-        state = Variable(torch.FloatTensor(env.get_state()))
-        state = state.unsqueeze(0)
-        state = state.unsqueeze(0)
-        a = policy.hidden_a
-        b = policy.hidden_b
-        # print ("a: ", a)
-        # print ("b: ", b)
-        Hidden_A.append(a)
-        Hidden_B.append(b)
-        action_probs = policy((state, (a, b)))
-        m = Categorical(action_probs)
-        action_idx = m.sample()
-        # action = policy.ACTION_SPACE[action_idx.item()]
-        next_state, reward = env.step(action_idx)
-        # print ("reward: ", reward)
-        # TODO
-
-        S.append(state)
-        A.append(action_idx)
-        R.append(reward)
-
-        if next_state == None:
-            # reached terminal state
-            break
-        else:
-            state = next_state
-    
-    # if next_state != None:
-    #     R[-1] = -100
-    logging.info(i)
-    S.append(torch.FloatTensor(next_state) if next_state != None else None)
-    return S, A, R, Hidden_A, Hidden_B
-
 def generate_episode(policy, env, T):
     '''
     return state: list of torch.FloatTensor
@@ -443,7 +405,6 @@ def generate_episode(policy, env, T):
         action_idx = m.sample()
         # action = policy.ACTION_SPACE[action_idx.item()]
         next_state, reward = env.step(action_idx)
-
         # TODO
 
         S.append(state)
