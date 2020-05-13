@@ -6,6 +6,7 @@ from collections import OrderedDict
 import numpy as np
 import scipy.stats
 from reinforce import REINFORCE
+import copy
 
 def update_init_params(target, old, step_size = 0.1):
     """Apply one step of gradient descent on the loss function `loss`, with 
@@ -91,7 +92,7 @@ def compare_parameter_initializations(params_list, model_args, num_test_tasks, s
         all_rewards = []
         for t in sample_tasks:
             model = REINFORCE(model_args)
-            model.load_state_dict(d["pi"])
+            model.load_state_dict(copy.deepcopy(d["pi"]))
             rewards, losses = model.train(t)
             all_rewards.append(rewards)
         d["rewards"] = np.array(all_rewards)
@@ -99,7 +100,7 @@ def compare_parameter_initializations(params_list, model_args, num_test_tasks, s
 def plot_adaptation(params_list):
     for i in range(len(params_list)):
         d = params_list[i]
-        trials = -np.log10(np.abs(d["rewards"]))
+        trials = np.log10(np.abs(d["rewards"])) * np.sign(d["rewards"])
         # trials = d["rewards"]
         x_series = np.array(range(len(trials[0])))
         mean_series = np.mean(trials, axis=0)

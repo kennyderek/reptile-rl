@@ -201,15 +201,17 @@ class REINFORCE(nn.Module):
             for m in range(0, self.args.num_mini_batches):
                 indices = slices[m*slice_len:(m+1)*slice_len]
                 
+                state_input = torch.as_tensor(batch_states, dtype=torch.float32)[indices]
+                state_input = torch.squeeze(state_input, 1)
                 batch_actor_loss, batch_entropy_loss = self.compute_loss(
-                                        state=torch.as_tensor(batch_states, dtype=torch.float32)[indices],
+                                        state=state_input,
                                         action=torch.as_tensor(batch_actions, dtype=torch.float32)[indices],
                                         weights=torch.as_tensor(batch_adv, dtype=torch.float32)[indices],
                                         ppo_epsilon=calc_eps_decay())
                 
                 if self.use_critic:
                     batch_critic_loss = self.compute_critic_loss(
-                                            state=torch.as_tensor(batch_states, dtype=torch.float32)[indices],
+                                            state=state_input,
                                             value=torch.as_tensor(batch_td, dtype=torch.float32).unsqueeze(1)[indices])
                 
                 batch_actor_loss = batch_actor_loss
