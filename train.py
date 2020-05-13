@@ -68,7 +68,9 @@ maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
         ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
         ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
 
-test_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
+maze_goal = (6, 10)
+
+vertical_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
             ["W", " ", " ", " ", "W", " ", " ", " ", "W"],
@@ -84,6 +86,34 @@ test_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
             ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
             ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
             ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
+vertical_goal = (6, 1)
+
+horizontal_maze = [["W", "W", "W", "W", "W", "W", "W", "W", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", "W", "W", "W", "W", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", " ", " ", " ", " ", " ", " ", " ", "W"],
+            ["W", "W", "W", "W", "W", "W", "W", "W", "W"]]
+
+simple_maze = [["W", "W", "W", "W"],
+        ["W", " ", " ", "W"],
+        ["W", " ", "G", "W"],
+        ["W", "W", "W", "W"]]
+
+
+simple_goal = (2, 2)
+
+horizontal_goal = (1, 6)
 
 if __name__ == "__main__":
     
@@ -94,10 +124,10 @@ if __name__ == "__main__":
     Normalize state: scales the x, y coordinates to be variance of 1 and mean of 0, assuming uniform distribution
     '''
     
-    world = MazeSimulator(goal_X=6, goal_Y=1,
+    world = MazeSimulator(goal_X=simple_goal[0], goal_Y=simple_goal[1],
                     reward_type="distance",
                     state_rep="fullboard",
-                    maze=test_maze,
+                    maze=simple_maze,
                     wall_penalty=-10,
                     normalize_state=True)  #6, 10
 
@@ -117,16 +147,26 @@ if __name__ == "__main__":
             # training related arguments
             self.gradient_clipping = True
             self.random_perm = True
-            self.num_batches = 300
-            self.num_mini_batches = 2
-            self.batch_size = 10
-            self.horizon = 100
+
+            #For training LSTM
+            self.num_batches = 30000
+            self.num_mini_batches = 1#2
+            self.batch_size = 1#10
+            self.horizon = 1#100
+
+            #For training other policies
+            # self.num_batches = 300
+            # self.num_mini_batches = 2
+            # self.batch_size = 10
+            # self.horizon = 100
+
             self.weight_func = lambda batch_num: (1 - batch_num/self.num_batches)**2
             self.history_size = 1
     
     def run_experiment(args, folder):
         model = REINFORCE(args)
-        rewards, losses = model.train(world)
+        # rewards, losses = model.train(world)
+        rewards, losses = model.train_RNN(world)
         make_folder(folder)
         plot_losses(losses, folder)
         plot_rewards(rewards, folder)

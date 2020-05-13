@@ -39,11 +39,12 @@ class REINFORCE(nn.Module):
         self.use_entropy = args.use_entropy
         self.history_size = args.history_size
 
-        print ("self.history_size: ", self.history_size)
 
-        self.policy = ActorWithHistory(self.state_input_size, self.action_space_size, self.history_size)
-        self.old_policy = ActorWithHistory(self.state_input_size, self.action_space_size, self.history_size)
+        # self.policy = ActorWithHistory(self.state_input_size, self.action_space_size, self.history_size)
+        # self.old_policy = ActorWithHistory(self.state_input_size, self.action_space_size, self.history_size)
 
+        self.policy = ActorWithLSTM(self.state_input_size, self.action_space_size)
+        self.old_policy = ActorWithLSTM(self.state_input_size, self.action_space_size)
 
         # self.policy = Actor(self.state_input_size, self.action_space_size)
         # self.old_policy = Actor(self.state_input_size, self.action_space_size)
@@ -272,22 +273,24 @@ class REINFORCE(nn.Module):
         return cumulative_rewards, losses
 
     def compute_RNN_loss(self, state, hidden_a, hidden_b, action, weights, ppo_epsilon):
-        #Flatten all sequences into a REALLY long sequence and calculate the loss on that
-        state = torch.FloatTensor(state)
+        state = Variable(torch.FloatTensor(state))
+
         state = state.squeeze(0)
-        action = torch.tensor(action, dtype=torch.long)#, dtype=torch.int64))[0][0]
-        hidden_a = torch.FloatTensor(hidden_a)
-        hidden_b = torch.FloatTensor(hidden_b)
-        # hidden_a = hidden_a.unsqueeze(0)
-        # hidden_a = hidden_a.unsqueeze(0)
-        # hidden_b = hidden_b.unsqueeze(0)
-        # hidden_b = hidden_b.unsqueeze(0)
+
+        action = Variable(torch.tensor(action, dtype=torch.float32))#, dtype=torch.int64))[0][0]
+
+        hidden_a = Variable(torch.FloatTensor(hidden_a))
+        hidden_b = Variable(torch.FloatTensor(hidden_b))
+        hidden_a = hidden_a.unsqueeze(0)
+        hidden_a = hidden_a.unsqueeze(0)
+        hidden_b = hidden_b.unsqueeze(0)
+        hidden_b = hidden_b.unsqueeze(0)
 
         if self.ppo:
             logp_ratios =  Categorical(self.policy((state, (hidden_a, hidden_b)))).log_prob(action) - Categorical(self.old_policy((state, (hidden_a, hidden_b)))).log_prob(action)
-            ratios = torch.exp(logp_ratios) #.to(dtype=torch.long)
+            ratios = torch.exp(logp_ratios)
 
-            clipped_adv = ratios[0][0].item() #torch.tensor((torch.clamp(ratios, 1 - ppo_epsilon, 1 + ppo_epsilon) * weights))
+            clipped_adv = ratios[0][0].item()
             if clipped_adv < (1-ppo_epsilon):
                 clipped_adv = torch.tensor((1-ppo_epsilon)*weights)
             elif clipped_adv > (1+ppo_epsilon):
@@ -325,15 +328,11 @@ class REINFORCE(nn.Module):
         total_batch_rewards = []
         total_hidden_a = []
         total_hidden_b = []
-        print ("num_batches: ", self.args.num_batches)
-        for batch in tqdm(range(self.args.num_batches)):  #batch_size will always be 1, horizon will also always be 1
-            # print ("batch: ", batch)
-            #TODO: check method
-            #"Backpropagating return-weighted eligibilities affects the policy such that it makes histories that were better than 
-            #other histories (in terms of reward) more likely by reinforcing the probabilities of taking similar actions for similar histories."
 
-            # print ("STEPING...")
+        for batch in tqdm(range(self.args.num_batches)):  #batch_size will always be 1, horizon will also always be 1
+
             env, s, a, td, adv, r, hidden_a, hidden_b = self.__step_RNN(env, self.args.horizon)
+
 
             total_batch_states.append(s)
             total_batch_actions.append(a)
@@ -350,13 +349,12 @@ class REINFORCE(nn.Module):
             batch_reward = r
 
 
-            #TODO: check - normalize batch advantage
             def calc_eps_decay():
                 return self.ppo_base_epsilon + self.args.weight_func(batch) * self.ppo_dec_epsilon
 
 
             #End of "episode": add reward, calculate loss, clear hidden state
-            if (batch % 500) == 0:
+            if (batch % 100) == 0:
                 if self.ppo:
                     temp_state_dict = copy.deepcopy(self.policy.state_dict())
                 cumulative_rewards.append(np.mean(total_batch_rewards))
@@ -372,62 +370,55 @@ class REINFORCE(nn.Module):
                     if not self.use_critic:
                         advantages[t] = G
                     else:
-                        t_state = torch.FloatTensor(total_batch_states[t])
+                        t_state = Variable(torch.FloatTensor(total_batch_states[t]))
                         t_state = t_state.squeeze(0)
                         advantages[t] = G - self.policy.value(t_state)
                     tds[t] = G
 
-                # for i in range(len(total_batch_states)):
-                batch_actor_loss, batch_entropy_loss = self.compute_RNN_loss(batch_state, self.policy.hidden_a, self.policy.hidden_b, batch_action, advantages[-1], ppo_epsilon=calc_eps_decay())
-                #total_batch_states[i], total_hidden_a[i], total_hidden_b[i], total_batch_actions[i], advantages[i], ppo_epsilon=calc_eps_decay())
+                for i in range(len(total_batch_states)):
+                    batch_actor_loss, batch_entropy_loss = self.compute_RNN_loss(total_batch_states[i], total_hidden_a[i], total_hidden_b[i], total_batch_actions[i], advantages[i], ppo_epsilon=calc_eps_decay())
+                    if self.use_critic:
+                        batch_critic_loss = self.compute_critic_loss_RNN(total_batch_states[i], tds[i])
 
-                if self.use_critic:
-                    batch_critic_loss = self.compute_critic_loss_RNN(batch_state, tds[-1])
-                    #total_batch_states[i], tds[i])
+                    batch_actor_loss = batch_actor_loss
+                    batch_entropy_loss = (0.1 + self.args.weight_func(batch))*batch_entropy_loss
 
-                batch_actor_loss = batch_actor_loss
-                batch_entropy_loss = (0.1 + self.args.weight_func(batch))*batch_entropy_loss
-
-                loss_d = {"actor": batch_actor_loss.item()}
-                loss = batch_actor_loss
-                # print ("loss: ", loss)
-                if self.use_critic:
-                    loss += batch_critic_loss
-                    loss_d["critic"] = batch_critic_loss.item()
-                if self.use_entropy:
-                    loss += batch_entropy_loss
-                    loss_d["entropy"] = batch_entropy_loss.item()
-                losses.append(loss_d)
-
-   
-                old_param = copy.deepcopy(self.policy.state_dict())
-
-                self.opt_a.zero_grad()
-                loss.backward(retain_graph=True)
-
-                if self.args.gradient_clipping:
-                    torch.nn.utils.clip_grad_norm_(self.parameters(), 0.5)
-                
-                self.opt_a.step()
+                    loss_d = {"actor": batch_actor_loss.item()}
+                    loss = batch_actor_loss
+                    if self.use_critic:
+                        loss += batch_critic_loss
+                        loss_d["critic"] = batch_critic_loss.item()
+                    if self.use_entropy:
+                        loss += batch_entropy_loss
+                        loss_d["entropy"] = batch_entropy_loss.item()
+                    losses.append(loss_d)
 
 
-            if self.ppo:
-                # update old policy to the previous new policy
-                self.old_policy.load_state_dict(temp_state_dict)
+                    self.opt_a.zero_grad()
+                    loss.backward(retain_graph=True)
 
-            self.policy.init_hidden()
-            # if self.ppo:
-            #     self.old_policy.init_hidden()
+                    if self.args.gradient_clipping:
+                        torch.nn.utils.clip_grad_norm_(self.parameters(), 0.5)
+                    
+                    self.opt_a.step()
+            
+                if self.ppo:
+                    # update old policy to the previous new policy
+                    self.old_policy.load_state_dict(temp_state_dict)
 
-            env = env.generate_fresh()
+                self.policy.init_hidden()
+                # if self.ppo:
+                #     self.old_policy.init_hidden()
 
-            total_batch_states = []
-            total_batch_actions = []
-            total_batch_td = []
-            total_batch_advs = []
-            total_batch_rewards = []
 
-            # print(cumulative_rewards[-1])
+                env = env.generate_fresh()
+
+                total_batch_states = []
+                total_batch_actions = []
+                total_batch_td = []
+                total_batch_advs = []
+                total_batch_rewards = []
+
 
         return cumulative_rewards, losses
 
@@ -437,11 +428,10 @@ class REINFORCE(nn.Module):
         weights is what to multiply the log probability by
         '''
 
-        state = torch.FloatTensor(state)
+        state = Variable(torch.FloatTensor(state))
         state = state.squeeze(0)
-        # state = state.squeeze(0)
- 
-        value = torch.FloatTensor([value])
+
+        value = Variable(torch.FloatTensor([value]))
 
         loss = F.smooth_l1_loss(self.policy.value(state), value)
         return loss.sum()
@@ -456,7 +446,7 @@ class REINFORCE(nn.Module):
         if self.ppo:
             S, A, R, Hidden_A, Hidden_B = generate_episode_LSTM(self.old_policy, env, horizon, self.old_policy.history_size)#generate_episode_with_history(self.old_policy, env, horizon, self.old_policy.history_size)
         else:
-            S, A, R, Hidden_A, Hidden_B = generate_episode_LSTM(self.policy, env, horizon, self.old_policy.history_size)#generate_episode_with_history(self.policy, env, horizon, self.policy.history_size)
+            S, A, R, Hidden_A, Hidden_B = generate_episode_LSTM(self.old_policy, env, horizon, self.old_policy.history_size)#generate_episode_with_history(self.policy, env, horizon, self.policy.history_size)
 
         traj_len = len(A)
 

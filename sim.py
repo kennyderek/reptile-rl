@@ -11,8 +11,12 @@ class MazeSimulator:
         
         self.maze = []
 
-        self.num_row = 16
-        self.num_col = 9
+        if maze == None:
+            self.num_row = 16
+            self.num_col = 9
+        else:
+            self.num_row = len(maze)
+            self.num_col = len(maze[0])
 
         self.agent_x = 1
         self.agent_y = 1
@@ -147,7 +151,7 @@ class MazeSimulator:
         returns the maze info vector corresponding to the agent's current x, y position
         '''
         if self.maze[self.agent_y][self.agent_x] == 'G':
-            return None
+            return self.maze_info[self.agent_y][self.agent_x] #None
         else:
             return self.maze_info[self.agent_y][self.agent_x]
 

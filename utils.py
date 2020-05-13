@@ -58,21 +58,19 @@ class ActorWithLSTM(nn.Module):
     def __init__(self, state_input_size, action_space_size):
         super(ActorWithLSTM, self).__init__()
 
+        print ("state_input_size: ", state_input_size)
+
         self.input_size = state_input_size
         self.action_space_size = action_space_size
 
-        self.num_lstm_units = 1 #TODO: check
-        self.num_lstm_layers = 1  #TODO: check
-        self.batch_size = 1  #TODO: check
-        self.hidden_size = 300
+        self.num_lstm_units = 1  #16  
+        self.num_lstm_layers = 1  
+        self.batch_size = 1  
 
         self.history_size = 0
 
         self.lstm = nn.LSTM(input_size=self.input_size, hidden_size=self.num_lstm_units, num_layers=self.num_lstm_layers, batch_first=True)
-        self.fc2_a = nn.Linear(self.hidden_size, self.hidden_size)
-        self.fc3_a = nn.Linear(self.hidden_size, self.hidden_size)
-        self.fc4_a = nn.Linear(self.hidden_size, self.hidden_size)
-        self.hidden_to_output = nn.Linear(self.num_lstm_units, self.action_space_size)
+        self.hidden_to_output = nn.Linear(self.num_lstm_units, self.action_space_size) #TODO
         self.hidden_to_value = nn.Linear(self.num_lstm_units, 1)
 
         #Init hidden units
@@ -80,22 +78,21 @@ class ActorWithLSTM(nn.Module):
         hidden_a = torch.randn(self.num_lstm_layers, self.batch_size, self.num_lstm_units)
         hidden_b = torch.randn(self.num_lstm_layers, self.batch_size, self.num_lstm_units)
 
-        self.hidden_a = hidden_a
-        self.hidden_b = hidden_b
+        self.hidden_a = Variable(hidden_a)
+        self.hidden_b = Variable(hidden_b)
 
     def init_hidden(self):
         hidden_a = torch.randn(self.num_lstm_layers, self.batch_size, self.num_lstm_units)
         hidden_b = torch.randn(self.num_lstm_layers, self.batch_size, self.num_lstm_units)
 
-        self.hidden_a = hidden_a
-        self.hidden_b = hidden_b
+        self.hidden_a = Variable(hidden_a)
+        self.hidden_b = Variable(hidden_b)
 
 
     def forward(self, inputs):#x_lengths):
         #Use pack_padded_sequence to make sure the LSTM won't see the padded items
 
-        #TODO: embed, might have reached goal state early
-
+        #batch_size = 1, seq_len = 1, embedding_dim = 144
         x, (a, b) = inputs
 
         if (len(x.size()) > 3):
@@ -119,10 +116,6 @@ class ActorWithLSTM(nn.Module):
         x = x.contiguous()
         x = x.view(-1, x.shape[2]) #reshape the data so it goes into the linear layer
 
-        x = F.relu(self.fc2_a(x))
-        x = F.relu(self.fc3_a(x))
-        x = F.relu(self.fc4_a(x))
-
         #run through the actual linear layer
         x = self.hidden_to_output(x)
 
@@ -139,6 +132,8 @@ class ActorWithLSTM(nn.Module):
 
 
     def value(self, x):
+        # print ("x: ", x)
+
         if (len(x.size()) > 3):
             x = x.squeeze(0)
         if (len(x.size()) < 3):
@@ -164,11 +159,16 @@ class ActorWithLSTM(nn.Module):
         x = x.contiguous()
         x = x.view(-1, x.shape[2]) #reshape the data so it goes into the linear layer
 
-        x = F.relu(self.fc2_a(x))
-        x = F.relu(self.fc3_a(x))
-        x = F.relu(self.fc4_a(x))
         #run through the actual linear layer - value
         x = self.hidden_to_value(x)#, dim=1)
+
+        # #Softmax activation
+        # #Transform the dimension: (batch_size * seq_len, num_lstm_units) --> (batch_size, seq_len, action_space_size)
+        # x = F.softmax(x, dim=1) #TODO
+
+        # #Reshape back to (batch_size, seq_len, action_space_size)
+        # x = x.view(batch_size, seq_len, self.action_space_size)
+
 
         return x
 
@@ -405,7 +405,6 @@ def generate_episode(policy, env, T):
         action_idx = m.sample()
         # action = policy.ACTION_SPACE[action_idx.item()]
         next_state, reward = env.step(action_idx)
-        # TODO
 
         S.append(state)
         A.append(action_idx)
@@ -422,3 +421,39 @@ def generate_episode(policy, env, T):
     logging.info(i)
     S.append(torch.FloatTensor(next_state) if next_state != None else None)
     return S, A, R
+
+def generate_episode_LSTM(policy, env, T, history_length):
+    goal_state = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+
+    S, A, R, Hidden_A, Hidden_B = [], [], [], [], []
+    for i in range(0, T):
+        state = Variable(torch.FloatTensor(env.get_state()))
+        state = state.unsqueeze(0)
+        state = state.unsqueeze(0)
+        a = policy.hidden_a
+        b = policy.hidden_b
+
+        Hidden_A.append(a)
+        Hidden_B.append(b)
+        action_probs = policy((state, (a, b)))
+        m = Categorical(action_probs)
+        action_idx = m.sample()
+        # action = policy.ACTION_SPACE[action_idx.item()]
+        next_state, reward = env.step(action_idx)
+
+
+        S.append(state)
+        A.append(action_idx)
+        R.append(reward)
+
+        if next_state == goal_state:
+            # reached terminal state
+            break
+        else:
+            state = next_state
+    
+    if next_state != goal_state:
+        R[-1] = -100
+    logging.info(i)
+    S.append(torch.FloatTensor(next_state) if next_state != None else None)
+    return S, A, R, Hidden_A, Hidden_B
